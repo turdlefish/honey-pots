@@ -1,0 +1,211 @@
+// Budget: what comes in, every bill and subscription in groups (Subscriptions → Netflix, Disney+…),
+// whose it is or how you split it, and what's left once bills and savings are out.
+
+import * as store from './store.js';
+import * as M from './model.js';
+import { nameOf, ownerColor, ownerTag, bothSlots, pref, setPref, person } from './people.js';
+import { esc, money, money0, r2, uid, toast, openSheet, closeSheet, confirmSheet, parseMoney } from './ui.js';
+
+const PERIODS = [['w', 'Week'], ['f', 'Fortnight'], ['m', 'Month'], ['y', 'Year']];
+const GROUP_EMOJI = ['📺', '🏠', '⚡', '🛒', '📱', '🩺', '🚗', '🐾', '💞', '📈', '🏦', '🎓', '🎵', '🧾', '✨', '🍜'];
+const inPeriod = (yearly, per) => M.fromYear(yearly, per);
+
+// Who the page is about (per phone): everyone, one of you (your own bills plus your share of the
+// shared ones), or just the shared ones.
+export function renderBudget(view, ctx) {
+  ctx.topbar.set('Budget');
+  const per = pref('budgetPer', 'm'), perWord = M.FREQ_LABEL[per];
+  const whoPref = pref('budgetWho', 'all'), who = ['all', 'a', 'b', 'j'].includes(whoPref) ? whoPref : 'all';
+  const groups = M.budgetGroups(), all = M.budgetItems(), tot = M.budgetTotals();
+  const items = who === 'all' ? all : who === 'j' ? all.filter(i => i.who === 'j') : all.filter(i => i.who === who || i.who === 'j');
+  const known = new Set(groups.map(g => g.id));
+  const loose = items.filter(i => !known.has(i.group));
+  // What an item costs the person on show (their share), or all of it.
+  const costOf = i => (who === 'a' || who === 'b' ? M.itemShares(i)[who] : M.perYear(i.amt, i.freq));
+
+  const psum = (s, big = false) => {
+    const t = tot[s], p = person(s), v = y => (y == null ? '—' : money(inPeriod(y, per), { cents: false }));
+    return `<div class="psum pcol${big ? ' big' : ''}" style="--pc:${esc(p.color)}"><div class="nm">${esc(p.name)}</div>
+      <div class="r"><span>Coming in</span><b>${t.income == null ? `<button class="linkbtn" data-income="${s}">set pay ›</button>` : `<button class="linkbtn" style="color:inherit;padding:0" data-income="${s}">${v(t.income)} ✎</button>`}</b></div>
+      <div class="r"><span>Bills &amp; spending</span><b>−${v(t.bills)}</b></div>
+      <div class="r"><span>Savings</span><b>−${v(t.savings)}</b></div>
+      ${t.apart ? `<div class="r"><span>${esc(t.apartNames.join(', ') || 'Kept apart')}</span><b>−${v(t.apart)}</b></div>` : ''}
+      <div class="r left"><span>Left over</span><b class="${t.left != null && t.left < 0 ? 'bad' : ''}">${t.left == null ? '—' : v(t.left)}</b></div></div>`;
+  };
+  const sharedSum = () => {
+    const sh = all.filter(i => i.who === 'j'), whole = sh.reduce((t, i) => t + M.perYear(i.amt, i.freq), 0);
+    const part = s => sh.reduce((t, i) => t + M.itemShares(i)[s], 0);
+    return `<div class="psum c-honey big"><div class="nm">Shared bills</div>
+      <div class="r"><span>Altogether</span><b>${money(inPeriod(whole, per), { cents: false })}</b></div>
+      ${bothSlots().map(s => `<div class="r"><span>${esc(nameOf(s))} pays</span><b>${money(inPeriod(part(s), per), { cents: false })}</b></div>`).join('')}
+      <div class="r left"><span>${sh.length} shared bill${sh.length === 1 ? '' : 's'}</span><b></b></div></div>`;
+  };
+
+  const groupCard = g => {
+    const list = items.filter(i => i.group === g.id);
+    if (!list.length && who !== 'all') return '';
+    const yearTotal = list.reduce((t, i) => t + costOf(i), 0);
+    return `<section class="card flat"><div class="card-head"><h3>${esc(g.emoji || '🧾')} ${esc(g.name)}</h3>
+        <span class="small num" style="font-weight:800">${money(inPeriod(yearTotal, per))}<span class="muted">/${esc(perWord)}</span></span>
+        ${g.id !== '_other' ? `<button class="iconbtn" data-group="${g.id}" aria-label="Edit group">✎</button>` : ''}</div>
+      ${list.length ? `<div class="bitems">${list.map(i => itemRow(i, per, who)).join('')}</div>` : '<p class="small muted">Nothing in this group yet.</p>'}
+      <button class="addline" data-additem="${g.id}">＋ Add to ${esc(g.name)}</button></section>`;
+  };
+
+  const whoSeg = `<div class="seg wide" role="group" aria-label="Whose budget">${[['all', 'Everyone'], ...bothSlots().map(s => [s, nameOf(s)]), ['j', 'Shared']]
+    .map(([k, l]) => `<button data-who="${k}" aria-pressed="${who === k}">${esc(l)}</button>`).join('')}</div>`;
+  const head = who === 'all' ? `<div class="sumgrid">${bothSlots().map(s => psum(s)).join('')}</div>
+        <p class="hint">Bills count your share of the ones you split. Savings is what each of you puts into pots this month (Pots tab); a pot kept apart, like the house deposit, has its own line.</p>`
+    : who === 'j' ? `${sharedSum()}<p class="hint">Only the bills you share, with what each of you pays.</p>`
+      : `${psum(who, true)}<p class="hint">${esc(nameOf(who))}’s own bills, plus ${esc(nameOf(who))}’s share of the shared ones.</p>`;
+
+  view.innerHTML = `${whoSeg}
+    <div class="toprow"><div class="seg" role="group" aria-label="Show amounts per">${PERIODS.map(([k, l]) => `<button data-per="${k}" aria-pressed="${per === k}">${l}</button>`).join('')}</div>
+      <button class="btn sm ghost" data-newgroup>＋ New group</button></div>
+    <div class="cols">
+      <section class="card ${who === 'a' || who === 'b' ? 'pcol' : 'c-honey'} span"${who === 'a' || who === 'b' ? ` style="--pc:${esc(person(who).color)}"` : ''}><span class="tape" aria-hidden="true"></span>
+        <div class="card-head"><h3>${who === 'a' || who === 'b' ? `${esc(nameOf(who))}’s ${esc(perWord)}` : who === 'j' ? `Shared, each ${esc(perWord)}` : `Each ${esc(perWord)}`}</h3></div>
+        ${head}
+      </section>
+      ${groups.map(groupCard).join('')}
+      ${loose.length ? groupCard({ id: '_other', name: 'Other', emoji: '🧾' }) : ''}
+      ${!items.length ? `<div class="empty span">${all.length ? 'Nothing here yet.' : 'No bills yet. Start a group (like <b>Subscriptions</b>) with <b>＋ New group</b>.'}</div>` : ''}
+    </div>`;
+
+  view.onclick = e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.who) { setPref('budgetWho', b.dataset.who); return ctx.render(); }
+    if (b.dataset.per) { setPref('budgetPer', b.dataset.per); return ctx.render(true); }
+    if (b.dataset.income) return editIncome(b.dataset.income, ctx);
+    if (b.dataset.item) return editItem(all.find(i => i.id === b.dataset.item), null, ctx);
+    if (b.dataset.additem) return editItem(null, b.dataset.additem === '_other' ? '' : b.dataset.additem, ctx, who === 'all' ? 'j' : who);
+    if (b.dataset.group) return editGroup(groups.find(g => g.id === b.dataset.group), ctx);
+    if (b.hasAttribute('data-newgroup')) return editGroup(null, ctx);
+  };
+}
+
+function itemRow(i, per, who = 'all') {
+  const y = M.perYear(i.amt, i.freq), sh = M.itemShares(i);
+  const even = i.split == null || Math.abs(i.split - 0.5) <= 0.004;
+  const mine = (who === 'a' || who === 'b') && i.who === 'j';
+  const meta = [
+    i.who === 'j' ? ownerTag('j', even ? 'half each' : 'shared') : who === 'all' ? ownerTag(i.who) : '',
+    i.freq !== per ? `<span>${money(i.amt)} a ${esc(M.FREQ_LABEL[i.freq])}</span>` : '',
+    i.acct ? `<span>· ${esc(i.acct)}</span>` : '',
+    i.track ? `<span class="tag c-honey">tracked in Owings</span>` : '',
+  ].filter(Boolean).join('');
+  const amount = mine ? M.fromYear(sh[who], per) : M.fromYear(y, per);
+  const under = mine ? `<small>${even ? 'half' : 'share'} of ${money(M.fromYear(y, per))}</small>`
+    : i.who === 'j' ? `<small>${bothSlots().map(s => `${esc(nameOf(s))} ${money(M.fromYear(sh[s], per))}`).join(' · ')}</small>` : '';
+  return `<button class="bitem" data-item="${i.id}"><div class="grow"><div class="nm">${esc(i.name)}</div><div class="meta">${meta}</div>${i.note ? `<div class="tiny muted">${esc(i.note)}</div>` : ''}</div>
+    <div class="amt">${money(amount)}${under}</div></button>`;
+}
+
+function editIncome(slot, ctx) {
+  const cur = M.income(slot) || { amt: null, freq: 'm' };
+  const el = openSheet(`<h3>${esc(nameOf(slot))}’s pay</h3><p class="muted small">After tax: what lands in the bank.</p>
+    <div class="fields2"><label class="field"><span>Amount</span><input class="inp money" id="in-amt" inputmode="decimal" value="${cur.amt != null ? esc(String(cur.amt)) : ''}" placeholder="$0"></label>
+    <label class="field"><span>Every</span><select class="inp" id="in-freq">${Object.entries(M.FREQ_LABEL).map(([k, l]) => `<option value="${k}" ${k === cur.freq ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+    <div class="row-btns end"><button class="btn ghost" data-close>Cancel</button><button class="btn primary" data-save>Save</button></div>`);
+  el.onclick = e => {
+    if (e.target.closest('[data-close]')) closeSheet();
+    if (!e.target.closest('[data-save]')) return;
+    const amt = parseMoney(el.querySelector('#in-amt').value);
+    store.setField('budget', 'inc:' + slot, amt == null ? null : { amt, freq: el.querySelector('#in-freq').value });
+    closeSheet(); ctx.render(true);
+  };
+}
+
+function editItem(item, groupId, ctx, whoNew = 'j') {
+  const isNew = !item;
+  const cur = item ? { ...item } : { id: uid(), name: '', amt: null, freq: 'm', who: whoNew, group: groupId || '', order: Date.now() / 1e13 };
+  const accounts = [...new Set(M.budgetItems().map(i => i.acct).filter(Boolean))];
+  const custom = cur.who === 'j' && cur.split != null && Math.abs(cur.split - 0.5) > 0.004;
+  const shareA = cur.amt ? r2(cur.amt * (cur.split ?? 0.5)) : '';
+  const el = openSheet(`<h3>${isNew ? 'A new bill or cost' : esc(cur.name)}</h3>
+    <label class="field"><span>Name</span><input class="inp" id="bi-name" value="${esc(cur.name)}" placeholder="e.g. Netflix, Internet, Rent" autocomplete="off"></label>
+    <div class="fields2"><label class="field"><span>Amount</span><input class="inp money" id="bi-amt" inputmode="decimal" value="${cur.amt != null ? esc(String(cur.amt)) : ''}" placeholder="$0.00"></label>
+      <label class="field"><span>Every</span><select class="inp" id="bi-freq">${Object.entries(M.FREQ_LABEL).map(([k, l]) => `<option value="${k}" ${k === cur.freq ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
+    <div class="field"><span>Whose</span><div class="seg wide" id="bi-who">${[...bothSlots(), 'j'].map(o => `<button type="button" data-who="${o}" aria-pressed="${o === cur.who}">${o === 'j' ? 'Shared' : esc(nameOf(o))}</button>`).join('')}</div></div>
+    <div class="field" id="bi-splitbox" ${cur.who === 'j' ? '' : 'hidden'}><span>Split</span>
+      <div class="seg wide" id="bi-split"><button type="button" data-split="half" aria-pressed="${!custom}">Half each</button><button type="button" data-split="custom" aria-pressed="${custom}">Not evenly</button></div>
+      <div class="fields2" id="bi-custom" ${custom ? '' : 'hidden'}><label class="field"><span>${esc(nameOf('a'))} pays</span><input class="inp money" id="bi-a" inputmode="decimal" value="${esc(String(shareA))}"></label>
+        <label class="field"><span>${esc(nameOf('b'))} pays</span><input class="inp money" id="bi-b" inputmode="decimal" value="${cur.amt ? esc(String(r2(cur.amt - shareA))) : ''}"></label></div></div>
+    <label class="field"><span>Group</span><select class="inp" id="bi-group"><option value="">Other</option>${M.budgetGroups().map(g => `<option value="${g.id}" ${g.id === cur.group ? 'selected' : ''}>${esc(g.emoji || '')} ${esc(g.name)}</option>`).join('')}</select></label>
+    <label class="field"><span>Paid from (optional)</span><input class="inp" id="bi-acct" list="bi-accts" value="${esc(cur.acct || '')}" placeholder="e.g. 2Up, CommBank" autocomplete="off"><datalist id="bi-accts">${accounts.map(a => `<option value="${esc(a)}">`).join('')}</datalist></label>
+    <label class="field"><span>Keep track of the spending in Owings</span><select class="inp" id="bi-track"><option value="">No, it’s a set bill</option>${M.cats().map(c => `<option value="${esc(c.id)}" ${c.id === cur.track ? 'selected' : ''}>Yes: purchases marked ${esc(c.emoji)} ${esc(c.name)}</option>`).join('')}</select>
+      <span class="hint">For a spending budget like groceries: Owings shows how much of it is left each month.</span></label>
+    <label class="field"><span>Note (optional)</span><input class="inp" id="bi-note" value="${esc(cur.note || '')}" autocomplete="off"></label>
+    <div class="row-btns end">${isNew ? '' : '<button class="btn danger sm" data-del>Delete</button><span class="grow"></span>'}<button class="btn ghost" data-close>Cancel</button><button class="btn primary" data-save>Save</button></div>`);
+  const $ = s => el.querySelector(s);
+  el.onclick = async e => {
+    const w = e.target.closest('[data-who]');
+    if (w) { el.querySelectorAll('#bi-who [data-who]').forEach(x => x.setAttribute('aria-pressed', String(x === w))); $('#bi-splitbox').hidden = w.dataset.who !== 'j'; return; }
+    const sp = e.target.closest('[data-split]');
+    if (sp) {
+      el.querySelectorAll('#bi-split [data-split]').forEach(x => x.setAttribute('aria-pressed', String(x === sp)));
+      $('#bi-custom').hidden = sp.dataset.split !== 'custom';
+      if (sp.dataset.split === 'custom' && !$('#bi-a').value) { const v = parseMoney($('#bi-amt').value) || 0; $('#bi-a').value = r2(v / 2) || ''; $('#bi-b').value = r2(v - r2(v / 2)) || ''; }
+      return;
+    }
+    if (e.target.closest('[data-close]')) return closeSheet();
+    if (e.target.closest('[data-del]')) {
+      closeSheet();
+      if (await confirmSheet({ title: `Delete ${cur.name}?`, yes: 'Delete', danger: true })) {
+        store.setField('budget', 'i:' + cur.id, null);
+        toast('Deleted', { label: 'Undo', run: () => { const { id, ...rest } = item; store.setField('budget', 'i:' + id, rest); ctx.render(true); } });
+        ctx.render(true);
+      }
+      return;
+    }
+    if (!e.target.closest('[data-save]')) return;
+    const who = el.querySelector('#bi-who [aria-pressed="true"]').dataset.who;
+    const out = {
+      name: $('#bi-name').value.trim() || 'Untitled', amt: parseMoney($('#bi-amt').value) || 0, freq: $('#bi-freq').value, who,
+      group: $('#bi-group').value, acct: $('#bi-acct').value.trim() || undefined, track: $('#bi-track').value || undefined,
+      note: $('#bi-note').value.trim() || undefined, order: cur.order ?? Date.now() / 1e13,
+    };
+    if (who === 'j' && el.querySelector('#bi-split [aria-pressed="true"]').dataset.split === 'custom') {
+      const a = parseMoney($('#bi-a').value) || 0, b = parseMoney($('#bi-b').value) || 0;
+      if (a + b > 0) { out.split = r2(a / (a + b) * 10000) / 10000; if (!out.amt) out.amt = r2(a + b); }
+    }
+    store.setField('budget', 'i:' + cur.id, out);
+    closeSheet(); ctx.render(true);
+  };
+  // Typing the amount keeps a custom split's two halves adding up.
+  $('#bi-amt').addEventListener('input', () => {
+    if ($('#bi-custom').hidden) return;
+    const v = parseMoney($('#bi-amt').value) || 0, a = parseMoney($('#bi-a').value) || 0, b = parseMoney($('#bi-b').value) || 0;
+    const s = a + b > 0 ? a / (a + b) : 0.5;
+    $('#bi-a').value = r2(v * s) || ''; $('#bi-b').value = r2(v - r2(v * s)) || '';
+  });
+}
+
+function editGroup(g, ctx) {
+  const isNew = !g, cur = g ? { ...g } : { id: uid(), name: '', emoji: '📺', order: Date.now() / 1e13 };
+  const el = openSheet(`<h3>${isNew ? 'A new group' : 'Edit group'}</h3>
+    <label class="field"><span>Name</span><input class="inp" id="bg-name" value="${esc(cur.name)}" placeholder="e.g. Subscriptions, Utilities" autocomplete="off"></label>
+    <div class="field"><span>Little picture</span><div class="chips" id="bg-emo">${GROUP_EMOJI.map(x => `<button type="button" class="chip" data-emo="${x}" aria-pressed="${x === cur.emoji}">${x}</button>`).join('')}</div></div>
+    <div class="row-btns end">${isNew ? '' : '<button class="btn danger sm" data-del>Delete group</button><span class="grow"></span>'}<button class="btn ghost" data-close>Cancel</button><button class="btn primary" data-save>Save</button></div>`);
+  el.onclick = async e => {
+    const em = e.target.closest('[data-emo]');
+    if (em) { el.querySelectorAll('#bg-emo [data-emo]').forEach(x => x.setAttribute('aria-pressed', String(x === em))); return; }
+    if (e.target.closest('[data-close]')) return closeSheet();
+    if (e.target.closest('[data-del]')) {
+      closeSheet();
+      const n = M.budgetItems().filter(i => i.group === cur.id).length;
+      if (await confirmSheet({ title: `Delete ${cur.name}?`, text: n ? `Its ${n} item${n === 1 ? '' : 's'} move to Other.` : '', yes: 'Delete', danger: true })) {
+        const f = { ['g:' + cur.id]: null };
+        M.budgetItems().filter(i => i.group === cur.id).forEach(({ id, ...i }) => { f['i:' + id] = { ...i, group: '' }; });
+        store.setFields('budget', f);
+        ctx.render(true);
+      }
+      return;
+    }
+    if (!e.target.closest('[data-save]')) return;
+    const { id, ...rest } = cur;
+    store.setField('budget', 'g:' + id, { ...rest, name: el.querySelector('#bg-name').value.trim() || 'Group', emoji: el.querySelector('#bg-emo [aria-pressed="true"]')?.dataset.emo || cur.emoji });
+    closeSheet(); ctx.render(true);
+  };
+}

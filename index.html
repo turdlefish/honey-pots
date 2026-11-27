@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta name="robots" content="noindex, nofollow">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Honey Pots</title>
+  <meta name="description" content="Savings pots, the budget and who owes what, for the two of you.">
+  <meta name="theme-color" content="#FFF8EC" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#141B36" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <script>
+    // Light (meadow) / Dark (night hive) / Auto (follow the device), chosen per phone on Us.
+    // Set before the page draws, so it never flashes the wrong look.
+    (function () {
+      var mq = window.matchMedia('(prefers-color-scheme: dark)');
+      window.potsApplyLook = function () {
+        var d = document.documentElement, t = null;
+        try { t = localStorage.getItem('pots:theme'); } catch (e) {}
+        var dark = t === 'dark' || (t !== 'light' && mq.matches);
+        d.dataset.theme = dark ? 'dark' : 'light';
+        try { if (window.PotsNative) window.PotsNative.setDark(dark); } catch (e) {}
+      };
+      window.potsApplyLook();
+      if (mq.addEventListener) mq.addEventListener('change', window.potsApplyLook);
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;600;700;800&display=swap">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="ob" class="ob" hidden></div>
+  <div id="app" class="shell" hidden>
+    <header class="topbar" id="topbar"></header>
+    <main id="view"></main>
+    <nav class="tabs" id="tabs" aria-label="Main">
+      <button data-go="pots"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="7" y="3" width="10" height="3.6" rx="1.4"/><path d="M8 6.6h8l1.6 2.2c.6.8.9 1.7.9 2.7v6.2a3 3 0 0 1-3 3H8.5a3 3 0 0 1-3-3v-6.2c0-1 .3-1.9.9-2.7z"/><path d="M5.6 13.2c2 1.3 4.1-.9 6.4 0s4.4 1.3 6.4 0" class="fill-honey"/></svg>Pots</button>
+      <button data-go="owings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6 3.5h12v17l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4-2 1.4z"/><path d="M9 8h6M9 11.5h6M9 15h3.5"/></svg>Owings<span class="tbadge" id="b-owings" hidden></span></button>
+      <button data-go="budget"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3.5" y="6" width="17" height="13" rx="3"/><path d="M3.5 10h17"/><path d="M6.5 6 15 3.2l1.2 2.8"/><circle cx="16.3" cy="14.5" r="1.3"/></svg>Budget</button>
+      <button data-go="years"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M4 20h16"/><path d="M6.5 20v-6M10.5 20V9M14.5 20v-4.5M18.5 20V5.5"/></svg>Years</button>
+      <button data-go="us"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8.5" r="3"/><circle cx="16.5" cy="9.5" r="2.4"/><path d="M3.5 19.5c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><path d="M14.8 14.6c.5-.2 1.1-.3 1.7-.3 2.3 0 3.9 1.5 4.3 4.2"/></svg>Us</button>
+    </nav>
+  </div>
+  <div id="sheet" class="sheet-wrap" hidden></div>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
