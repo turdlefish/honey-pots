@@ -2,11 +2,20 @@
 
 import * as store from './store.js';
 import * as M from './model.js';
-import { CONFIG, VERSION, APP, canSync } from './config.js';
+import { CONFIG, VERSION, APP, WEBSITE, canSync } from './config.js';
 import { person, COLORS, nameOf } from './people.js';
 import { esc, toast, copyText, openSheet, closeSheet, confirmSheet, uid } from './ui.js';
 import { jointName } from './owings.js';
-import { importSheet, seedAvailable } from './importer.js';
+import { importSheet, importXBudgets, seedAvailable } from './importer.js';
+import { mountFeedback } from './feedback.js';
+
+const isNative = () => !!window.PotsNative;
+const siteName = () => WEBSITE.replace(/^https?:\/\//, '').replace(/\/$/, '');
+/** The website: open it (from the app; on the website you're on it already) or copy its link. */
+const siteRow = () => `<div class="site-row"><p class="small">💻 ${isNative()
+    ? `<b>On the website too:</b> <b class="site-addr">${esc(siteName())}</b>. Put in your space code there and it’s the same space, synced with the app both ways.`
+    : `<b>The website:</b> <b class="site-addr">${esc(siteName())}</b>. The same space as the Android app, synced both ways.`}</p>
+  <div class="row-btns">${isNative() ? `<a class="btn sm" href="${esc(WEBSITE)}" target="_blank" rel="noopener">🌐 Open the website ↗</a>` : ''}<button class="btn sm ghost" data-act="copysite">📋 Copy the link</button></div></div>`;
 
 const themeNow = () => { try { return localStorage.getItem('pots:theme') || 'auto'; } catch (e) { return 'auto'; } };
 function setTheme(t) {
@@ -41,7 +50,9 @@ export function renderUs(view, ctx) {
       ${!canSync() ? `<p class="note-box small">Honey Pots doesn’t send anything to the database yet: that waits until the database keeps your rows private (see SUPABASE-SETUP.md). Until then everything stays on this device.</p>` : ''}
       <div class="field"><span>Look</span><div class="seg wide" role="group">${[['light', 'Meadow'], ['dark', 'Night hive'], ['auto', 'Auto']].map(([k, t]) => `<button data-theme-pick="${k}" aria-pressed="${themeNow() === k}">${t}</button>`).join('')}</div>
         <span class="hint">Auto follows your phone’s light or dark setting.</span></div>
+      ${siteRow()}
     </section>
+    <section class="card flat c-lav fb-card" id="fbCard"></section>
     <section class="card flat">
       <div class="card-head"><h3>Owings</h3></div>
       <label class="field"><span>Your joint account is called</span><input class="inp" id="us-joint" value="${esc(jointName())}" placeholder="Joint account" autocomplete="off"></label>
@@ -55,10 +66,11 @@ export function renderUs(view, ctx) {
     <section class="card flat"><button class="btn danger" data-act="signout">Sign out on this phone</button></section>
   </div>`;
 
+  mountFeedback(view.querySelector('#fbCard'));
   if (CONFIG.isLocalHost) seedAvailable().then(seed => {
     const box = view.querySelector('#us-seed');
     if (!box) return;
-    box.innerHTML = seed ? `<button class="btn sm" data-act="import">📥 Bring in the spreadsheet</button><span class="small muted">${esc(seed.summary || '')}</span>` : '<span class="small muted">No spreadsheet import found (Honey_Pots/private/honey-pots-seed.json).</span>';
+    box.innerHTML = seed ? `<button class="btn sm" data-act="import">📥 Bring in the spreadsheet</button>${seed.xbudgets ? '<button class="btn sm ghost" data-act="importx">🍩 Bring in just the separate budget</button>' : ''}<span class="small muted">${esc(seed.summary || '')}</span>` : '<span class="small muted">No spreadsheet import found (Honey_Pots/private/honey-pots-seed.json).</span>';
   });
 
   view.onchange = e => {
@@ -75,6 +87,8 @@ export function renderUs(view, ctx) {
     if (!t) return;
     const a = t.dataset.act;
     if (a === 'copy') toast((await copyText(s.space)) ? 'Code copied' : 'Select the code to copy it');
+    if (a === 'copysite') toast((await copyText(WEBSITE)) ? 'Website link copied' : `The website is ${siteName()}`);
+    if (a === 'importx') return importXBudgets(ctx);
     if (a === 'sync') { await store.syncNow(); toast('Synced'); ctx.render(true); }
     if (a === 'name') return editName(ctx);
     if (a === 'addcat') {

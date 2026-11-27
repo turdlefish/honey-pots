@@ -1,0 +1,141 @@
+// App feedback, like Human Being, Human Doing and Property Inspect: bugs, ideas and wishes for
+// Honey Pots that either of you can add, and tick off once sorted. On the Us tab.
+//
+// One shared document "feedback"; each note is its own field, so the usual newest-wins merge
+// works per note:
+//   fb:<id> = { text, at, author, edited?, done, doneT }   (null = deleted)
+// Only the person who wrote a note can change its words or delete it; either of you can tick it.
+// The person who makes the app can tick one off too, from their feedback inbox, with an optional
+// reply and the version it's in: a separate document only they write,
+// p:m:feedback = { notes: { <id>: { done, at, reply?, in? } } }. The newest change wins.
+
+import * as store from './store.js';
+import { nameOf } from './people.js';
+import { esc, toast, copyText, openSheet, closeSheet } from './ui.js';
+import { APP } from './config.js';
+
+const DOC = 'feedback';
+const MAX = 1000;
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const day = ms => new Date(ms).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+
+let editing = null;              // id of my note being edited
+const drafts = { add: '' };      // text being typed, kept when the page redraws
+let showDone = false;
+
+function notes() {
+  const me = store.me();
+  const mk = (store.read(store.keyFor('m', DOC), null) || {}).notes || {};
+  return Object.entries(store.merged(DOC))
+    .filter(([k, r]) => k.startsWith('fb:') && r.v && r.v.text)
+    .map(([k, r]) => {
+      const n = { id: k.slice(3), ...r.v, mine: r.v.author === me, raw: r.v, maker: mk[k.slice(3)] || null, byMaker: false };
+      if (n.maker && (n.maker.at || 0) > (n.doneT || 0)) { n.done = !!n.maker.done; n.doneT = n.maker.at; n.byMaker = !!n.maker.done; }
+      return n;
+    });
+}
+const put = (id, v) => store.setField(DOC, 'fb:' + id, v);
+
+function itemHTML(n) {
+  const who = esc(nameOf(n.author));
+  const meta = n.done
+    ? (n.byMaker ? `${who} · <b>✓ sorted by the person who makes ${APP}${n.maker.in ? ` (in ${esc(n.maker.in)})` : ''}</b> · ${day(n.doneT)}` : `${who} · done ${day(n.doneT || n.at)}`)
+    : `${who} · ${day(n.at)}${n.edited ? ' · edited' : ''}`;
+  const reply = n.maker && n.maker.reply ? `<span class="fb-reply">💬 ${esc(n.maker.reply)}</span>` : '';
+  if (editing === n.id && n.mine) {
+    return `<li class="fb-item editing" data-fb="${esc(n.id)}">
+      <textarea class="inp fb-edit" rows="3" maxlength="${MAX}" aria-label="Edit note">${esc(drafts[n.id] ?? n.text)}</textarea>
+      <div class="row-btns end"><button type="button" class="btn sm ghost" data-fb-act="cancel">Cancel</button><button type="button" class="btn sm primary" data-fb-act="save">Save</button></div></li>`;
+  }
+  return `<li class="fb-item${n.done ? ' done' : ''}" data-fb="${esc(n.id)}">
+    <button type="button" class="fb-tick" data-fb-act="${n.done ? 'reopen' : 'done'}" aria-pressed="${!!n.done}" aria-label="${n.done ? 'Done, tap to reopen' : 'Mark as done'}">${n.done ? '✓' : ''}</button>
+    <div class="fb-body"><p class="fb-text">${esc(n.text)}</p><span class="fb-meta">${meta}</span>${reply}</div>
+    ${n.mine && !n.done ? '<button type="button" class="linkbtn" data-fb-act="edit" aria-label="Edit">✎</button>' : ''}
+    ${n.mine ? '<button type="button" class="linkbtn" data-fb-act="delete" aria-label="Delete">✕</button>' : ''}</li>`;
+}
+
+/** The card's insides (Us puts it in a <section id="fbCard"> and calls mountFeedback). */
+export function feedbackHTML() {
+  const all = notes();
+  const open = all.filter(n => !n.done).sort((a, b) => b.at - a.at);
+  const done = all.filter(n => n.done).sort((a, b) => (b.doneT || 0) - (a.doneT || 0));
+  return `<span class="tape" aria-hidden="true"></span>
+    <div class="card-head"><h3>💭 App feedback</h3>${open.length ? `<span class="sub">${open.length} open</span>` : ''}</div>
+    <p class="small muted">Bugs, ideas and wishes for ${APP}. Either of you can add them, and tick them off once they’re sorted. The person who makes ${APP} sees them too, and ticks them off when they’re sorted.</p>
+    <form class="fb-add"><textarea class="inp" name="fb" rows="2" maxlength="${MAX}" placeholder="e.g. I’d love a reminder to tick the months off" aria-label="New feedback">${esc(drafts.add)}</textarea><button class="btn sm primary">Add</button></form>
+    ${open.length ? `<ul class="fb-list">${open.map(itemHTML).join('')}</ul>` : '<p class="small muted">Nothing open, lovely ✨</p>'}
+    ${open.length ? '<div class="row-btns"><button type="button" class="btn sm ghost" data-fb-act="copy">📋 Copy open feedback</button></div>' : ''}
+    ${done.length ? `<details class="fb-done"${showDone ? ' open' : ''}><summary class="small">Done (${done.length})</summary><ul class="fb-list">${done.map(itemHTML).join('')}</ul></details>` : ''}`;
+}
+
+function openText() {
+  const open = notes().filter(n => !n.done).sort((a, b) => a.at - b.at);
+  return `${APP} feedback (${open.length} open, ${new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}):\n`
+    + open.map(n => `• ${nameOf(n.author)}: ${n.text.replace(/\s*\n\s*/g, ' / ')}`).join('\n');
+}
+
+function confirmDelete(text) {
+  return new Promise(ok => {
+    const s = openSheet(`<h3>Delete this note?</h3><p class="muted">${esc(text.length > 80 ? text.slice(0, 80) + '…' : text)}</p>
+      <div class="row-btns end"><button class="btn ghost" data-close>Cancel</button><button class="btn danger" data-yes>Delete</button></div>`);
+    s.onclick = e => {
+      if (e.target.closest('[data-yes]')) { closeSheet(); ok(true); }
+      else if (e.target.closest('[data-close]')) { closeSheet(); ok(false); }
+    };
+  });
+}
+
+/** Wires up the card in `section` (its own clicks, so the page's handler leaves it alone). */
+export function mountFeedback(section) {
+  const redraw = () => { section.innerHTML = feedbackHTML(); };
+  section.addEventListener('input', e => {
+    if (e.target.name === 'fb') drafts.add = e.target.value;
+    else if (e.target.classList.contains('fb-edit') && editing) drafts[editing] = e.target.value;
+  });
+  section.addEventListener('toggle', e => { if (e.target.classList?.contains('fb-done')) showDone = e.target.open; }, true);
+  section.addEventListener('submit', e => {
+    if (!e.target.closest('.fb-add')) return;
+    e.preventDefault();
+    const ta = e.target.querySelector('textarea');
+    const text = ta.value.trim();
+    if (!text) return ta.focus();
+    put(newId(), { text: text.slice(0, MAX), at: Date.now(), author: store.me(), done: false, doneT: 0 });
+    drafts.add = '';
+    toast('Feedback added 💭');
+    redraw();
+  });
+  section.addEventListener('click', async e => {
+    const b = e.target.closest('[data-fb-act]');
+    if (!b) return;
+    e.stopPropagation();
+    const act = b.dataset.fbAct;
+    const id = b.closest('[data-fb]')?.dataset.fb;
+    const n = id ? notes().find(x => x.id === id) : null;
+    const rec = n ? { ...n.raw } : {};   // the note as saved (without the maker's tick)
+    if (act === 'done' || act === 'reopen') {
+      if (!n) return;
+      put(id, { ...rec, done: act === 'done', doneT: Date.now() });
+      if (act === 'done') toast('Ticked off ✨');
+      redraw();
+    } else if (act === 'edit') {
+      editing = id; redraw();
+      const ta = section.querySelector('.fb-edit');
+      if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+    } else if (act === 'cancel') {
+      delete drafts[editing]; editing = null; redraw();
+    } else if (act === 'save') {
+      const text = (section.querySelector('.fb-edit')?.value || '').trim();
+      if (!text) return toast('Write something first, or delete the note');
+      put(id, { ...rec, text: text.slice(0, MAX), edited: true });
+      delete drafts[id]; editing = null; redraw();
+    } else if (act === 'delete') {
+      if (!n || !(await confirmDelete(n.text))) return;
+      put(id, null);
+      if (editing === id) editing = null;
+      redraw();
+    } else if (act === 'copy') {
+      toast((await copyText(openText())) ? 'Open feedback copied 📋' : 'Couldn’t copy, sorry');
+    }
+  });
+  redraw();
+}

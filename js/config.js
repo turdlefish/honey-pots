@@ -19,7 +19,9 @@ try { mockFlag = localStorage.getItem('pots:mock') === '1'; } catch (e) {}
 
 export const APP = 'Honey Pots';
 // This app's version (shown on Us; the Android app's versionName will match it).
-export const VERSION = '1.2';
+export const VERSION = '1.3';
+// The website (GitHub Pages): the same space as the Android app, synced both ways.
+export const WEBSITE = 'https://turdlefish.github.io/honey-pots/';
 
 export const CONFIG = {
   supabaseUrl: 'https://njywijcqspkwebfqesjx.supabase.co',

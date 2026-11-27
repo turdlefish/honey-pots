@@ -524,3 +524,88 @@ button.card.featured { text-align: left; font: inherit; color: inherit; cursor: 
 .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .filters .inp { padding: 7px 10px; font-size: 14.5px; }
 .sumline .linkbtn { margin-left: auto; }
+
+/* ── 1.3 ───────────────────────────────────────────────────────────────── */
+/* chart colours (the doughnut): eight that stay apart for colour-blind eyes too, light and dark */
+:root { --viz-1: #2a78d6; --viz-2: #eb6834; --viz-3: #1baf7a; --viz-4: #eda100; --viz-5: #e87ba4; --viz-6: #008300; --viz-7: #6250d6; --viz-8: #e34948; --viz-more: #898781; --viz-track: #F2E9DB; }
+:root[data-theme="dark"] { --viz-1: #3987e5; --viz-2: #d95926; --viz-3: #199e70; --viz-4: #c98500; --viz-5: #d55181; --viz-6: #0ca30c; --viz-7: #9085e9; --viz-8: #e66767; --viz-more: #898781; --viz-track: rgba(255, 214, 150, .13); }
+
+/* a goal reached: green */
+.jcard.done-y { background: var(--mint-bg); border-color: transparent; }
+.card.reached, .mplan.reached { background: color-mix(in srgb, var(--mint-bg) 85%, var(--paper)); border-color: var(--mint-mid); }
+.yrow.reached { background: color-mix(in srgb, var(--mint-bg) 70%, transparent); border-radius: 12px; padding-left: 6px; padding-right: 6px; }
+
+/* Plan by month: fold a pot away */
+.iconbtn.fold { width: 30px; height: 30px; font-size: 14px; }
+.mplan.folded { padding-top: 10px; padding-bottom: 10px; }
+.mrowlabel { display: flex; gap: 8px; align-items: center; font-size: 12px; font-weight: 800; color: var(--ink-soft); }
+.mtile.plain { background: var(--surface-2); }
+.mtile.plain small { color: var(--ink-soft); }
+.mtile.allin { background: var(--mint-bg); }
+.mtile.allin small { color: var(--mint-ink); }
+
+/* accounts */
+.kinds { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.kinds .opt { padding: 10px; font-size: 14px; align-items: flex-start; line-height: 1.3; }
+.kinds .opt small { display: block; font-weight: 700; }
+.linkbtn.inkbtn { color: var(--ink); padding: 0; font-size: 13.5px; }
+
+/* feedback (like Human Being and Human Doing) */
+.fb-card { gap: 10px; }
+.fb-add { display: flex; gap: 8px; align-items: flex-end; }
+.fb-add .inp { flex: 1; min-height: 46px; }
+.fb-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.fb-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 10px 10px 12px; border-radius: 14px; background: color-mix(in srgb, var(--surface) 75%, transparent); border: 1px solid var(--line); }
+.fb-item.done { background: transparent; }
+.fb-item.done .fb-text { text-decoration: line-through; color: var(--ink-soft); }
+.fb-item.editing { flex-direction: column; align-items: stretch; }
+.fb-tick { flex: none; width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--lav); background: transparent; color: #fff; font-weight: 800; font-size: 13px; margin-top: 1px; padding: 0; }
+.fb-item.done .fb-tick { background: var(--lav); }
+.fb-body { flex: 1; min-width: 0; }
+.fb-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.4; }
+.fb-meta { display: block; margin-top: 3px; font-size: 11.5px; font-weight: 700; color: var(--ink-soft); }
+.fb-reply { display: block; margin-top: 4px; padding: 6px 10px; border-radius: 10px; background: var(--surface-2); font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.fb-done summary { cursor: pointer; color: var(--ink-soft); font-weight: 700; }
+.fb-done .fb-list { margin-top: 8px; }
+.site-row { display: flex; flex-direction: column; gap: 8px; border-top: 1.5px dashed var(--line); padding-top: 10px; }
+.site-addr { color: var(--honey-ink); overflow-wrap: anywhere; }
+
+/* separate budgets: the doughnut and where the pay goes */
+.bookseg button { max-width: 210px; overflow: hidden; text-overflow: ellipsis; }
+.xtop { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+.donut { position: relative; width: 184px; height: 184px; flex: none; margin: 0 auto; }
+.donut svg { width: 100%; height: 100%; display: block; }
+.donut .track { fill: none; stroke: var(--viz-track); }
+.donut .arc { fill: none; cursor: pointer; transition: opacity .15s; outline: none; }
+.donut.focus .arc:not(.on) { opacity: .32; }
+.dmid { position: absolute; inset: 34px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; pointer-events: none; }
+.dmid b { font: 600 22px/1.1 var(--font-display); }
+.dmid span { font-size: 11.5px; font-weight: 800; color: var(--ink-soft); line-height: 1.25; margin-top: 2px; }
+.xsum { flex: 1; min-width: 210px; display: flex; flex-direction: column; gap: 4px; }
+.xsum .r { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; font-size: 14px; }
+.xsum .r b { font-variant-numeric: tabular-nums; }
+.xsum .left { border-top: 1.5px dashed var(--line); padding-top: 6px; margin-top: 2px; font-size: 15.5px; }
+.sw { display: inline-block; width: 11px; height: 11px; border-radius: 4px; flex: none; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .08); vertical-align: 0; }
+.xlist { display: flex; flex-direction: column; }
+.xrow { display: grid; grid-template-columns: auto minmax(84px, 1.1fr) minmax(50px, 1fr) auto 38px; gap: 8px; align-items: center; padding: 6px 4px; border: 0; border-top: 1.5px dashed var(--line); background: none; text-align: left; font: inherit; font-size: 13.5px; width: 100%; border-radius: 0; }
+.xrow:first-child { border-top: 0; }
+.xrow .nm { font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xrow .num { font-weight: 800; text-align: right; }
+.xrow .pct { color: var(--ink-soft); font-size: 12.5px; }
+.xrow.on { background: var(--surface-2); border-radius: 10px; }
+.xrow.leftrow .nm { color: var(--ink-soft); }
+.xbar { height: 8px; border-radius: 99px; background: var(--line-soft); overflow: hidden; display: block; }
+.xbar i { display: block; height: 100%; border-radius: 99px; }
+.xcard .card-head h3 .sw, .card-head h3 .sw { margin-right: 2px; }
+@media (max-width: 420px) { .xrow { grid-template-columns: auto minmax(70px, 1fr) minmax(30px, .7fr) auto 34px; gap: 6px; } .donut { width: 168px; height: 168px; } }
+/* month tiles never push the page wider: amounts like "$1,016 spare" wrap */
+.mtile { min-width: 0; }
+.mtile small { white-space: normal; text-align: center; line-height: 1.15; overflow-wrap: anywhere; }
+.mtile .num { overflow-wrap: anywhere; text-align: center; }
+/* "Left over" is the empty part of the ring: drawn as an outline in the list */
+:root { --viz-track: #EEE3D1; }
+.xrow.leftrow .xbar i, .xrow.leftrow .sw { background: transparent !important; box-shadow: inset 0 0 0 1.5px var(--ink-faint); }
+/* the list's bars line up row to row: fixed amount and % columns */
+.xrow { grid-template-columns: 12px minmax(0, 1.2fr) minmax(0, 1fr) 76px 40px; }
+@media (max-width: 420px) { .xrow { grid-template-columns: 12px minmax(0, 1.15fr) minmax(0, .85fr) 64px 34px; gap: 6px; } }
+@media (max-width: 420px) { .xrow { grid-template-columns: 12px minmax(0, 1.55fr) minmax(0, .65fr) 62px 32px; } }

@@ -4,9 +4,11 @@
 // Documents (all shared):
 //   pots            <potId> → { name, emoji, owner: 'a'|'b'|'j', type: 'year'|'goal',
 //                               goal?: {a?, b?}, start?: {a?, b?}, note?, order?, archived? }
-//   y<YYYY>         py:<pot> → { target: {a?, b?}, carry?: {a?, b?}, label? }      (a yearly pot's year)
-//                   c:<pot>:<slot>:<YYYY-MM> → { plan, done?, amt? }              (money into a pot)
-//                   w:<id> → { pot, ym, a?, b?, note }                             (money taken out by hand)
+//   y<YYYY>         py:<pot> → { target: {a?, b?}, carry?: {a?, b?}, label?, due? }  (a yearly pot's year)
+//                   c:<pot>:<slot>:<YYYY-MM> → { plan, done?, amt?, at? }         (money into a pot; at = when it was ticked done)
+//                   w:<id> → { pot, ym, date?, a?, b?, note, at? }                (money taken out by hand)
+//                   d:<id> → { pot, ym, date?, a?, b?, note, at?, from? }         (money put in by hand; from 'acct' =
+//                                                                                   moved in from its own account, see accounts)
 //     A yearly pot's money lives in its own year's doc, even when it's put in the year
 //     before (saving early for next year). A goal pot's lives in the calendar year's doc.
 //   totals          <slot>:<YYYY-MM> → what that person puts into savings that month
@@ -91,9 +93,13 @@ export function setCell(potId, y, slot, ym, patch) {
   const key = cellKey(potId, slot, ym), cur = vals(Y(y))[key] || {};
   const next = { ...cur, ...patch };
   if (next.amt == null || next.amt === next.plan) delete next.amt;
-  if (!next.done) delete next.done;
+  // When a month is ticked done (so a savings account knows whether that money came after its balance).
+  if (next.done && !cur.done) next.at = Date.now();
+  if (!next.done) { delete next.done; delete next.at; }
   store.setField(Y(y), key, next.plan || next.amt ? next : null);
 }
+/** A cell ticked done now (for ticking many at once). */
+export const doneNow = c => ({ ...c, done: true, ...(c.done ? {} : { at: Date.now() }) });
 /** Several fields of one year's doc at once: { key: value }. */
 export const setYearFields = (y, fields) => store.setFields(Y(y), fields);
 
@@ -118,10 +124,14 @@ export function manualDeposits(potId, y) {
 }
 export function saveDeposit(y, dep) { const { id, py, kind, ...rest } = dep; store.setField(Y(y), 'd:' + id, rest); }
 export function deleteDeposit(y, id) { store.setField(Y(y), 'd:' + id, null); }
-/** Deposits by hand for one person in one calendar month, across every pot (for the year's bars). */
-export function depositsInMonth(slot, ym) {
+/** Deposits by hand for one person in one calendar month, across every pot or the pots `keep` says (for the year's bars). */
+export function depositsInMonth(slot, ym, keep = null) {
   let t = 0;
-  for (const y of dataYears()) for (const [k, d] of Object.entries(vals(Y(y)))) if (k.startsWith('d:') && d && d.ym === ym) t += +d[slot] || 0;
+  for (const y of dataYears()) for (const [k, d] of Object.entries(vals(Y(y)))) {
+    if (!k.startsWith('d:') || !d || d.ym !== ym) continue;
+    if (keep) { const p = getPot(d.pot); if (!p || !keep(p)) continue; }
+    t += +d[slot] || 0;
+  }
   return r2(t);
 }
 
@@ -163,6 +173,8 @@ export function potStats(pot, y) {
         ...x, target, carry: r2(carry), have, balance: r2(have - x.used),
         left: target != null ? r2(Math.max(0, target - have)) : 0,
         unplanned: target != null ? r2(Math.max(0, target - carry - x.plan - (x.added || 0))) : 0,
+        // This person's part is in: the months ticked done (and money put in by hand) reach their target.
+        reached: target != null && target > 0 && have >= target - 0.5,
       };
       per[s] = p;
       for (const k of ['carry', 'plan', 'saved', 'used', 'have', 'balance', 'left', 'unplanned']) tot[k] = r2(tot[k] + p[k]);
@@ -174,6 +186,23 @@ export function potStats(pot, y) {
     tot.reached = tot.target != null && tot.target > 0 && tot.have >= tot.target - 0.5;
     return { per, tot, py };
   });
+}
+/**
+ * Has a pot reached its goal for some of you (slots), by the months ticked done? And where the
+ * plan gets it to by the end of that year (money in + the months not ticked yet), against the target.
+ * { target, have, left, reached, planned, short, over, each: { a: reached? } } — target null when not all of them have one.
+ */
+export function goalCheck(pot, y, slots = slotsOf(pot)) {
+  const st = potStats(pot, y), cells = cellsOf(pot.id, y), rows = slots.filter(s => st.per[s]);
+  const each = Object.fromEntries(rows.map(s => [s, st.per[s].reached]));
+  if (!rows.length || !rows.every(s => st.per[s].target != null)) return { target: null, have: r2(rows.reduce((t, s) => t + st.per[s].have, 0)), reached: false, each };
+  const target = r2(rows.reduce((t, s) => t + st.per[s].target, 0)), have = r2(rows.reduce((t, s) => t + st.per[s].have, 0));
+  const toCome = r2(rows.reduce((t, s) => t + Object.values(cells[s] || {}).reduce((x, c) => x + (c.done ? 0 : cellPlan(c)), 0), 0));
+  const planned = r2(have + toCome);
+  return {
+    target, have, left: r2(Math.max(0, target - have)), reached: target > 0 && have >= target - 0.5, each,
+    planned, short: r2(Math.max(0, target - planned)), over: r2(Math.max(0, planned - target)),
+  };
 }
 /**
  * Money for a goal that sits in one of your own accounts, outside the pot's monthly money
@@ -420,7 +449,7 @@ function owingUseMap() {
     for (const ym of owingMonths()) for (const e of entries(ym)) {
       for (const u of splitEntry(e).potUse) {
         if (!map.has(u.pot.id)) map.set(u.pot.id, []);
-        map.get(u.pot.id).push({ id: e.id, ym, date: e.date, py: u.py, a: u.a, b: u.b, note: (u.line.desc && !u.line.rest ? u.line.desc + ' · ' : '') + (e.desc || ''), kind: 'owing' });
+        map.get(u.pot.id).push({ id: e.id, ym, date: e.date, at: e.at, py: u.py, a: u.a, b: u.b, note: (u.line.desc && !u.line.rest ? u.line.desc + ' · ' : '') + (e.desc || ''), kind: 'owing' });
       }
     }
     return map;
@@ -456,10 +485,23 @@ export function allowances(ym) {
   });
 }
 
-// ── Savings accounts ─────────────────────────────────────────────────────
-// accounts doc: a:<id> → { name, owner: 'a'|'b'|'j', pots: [potId], note?, order }
-//               m:<id>:<YYYY-MM> → { interest?, balance? }   (interest that month; what the bank said)
+// ── Accounts (savers and spending accounts) ──────────────────────────────
+// The pots are the plan; an account is the real money in the bank. Its amount starts from what
+// was in it on a date (a balance you put in), and money in and out after that changes it.
+// accounts doc: a:<id> → { name, kind: 'save'|'spend', owner: 'a'|'b'|'j', pots: [potId], note?, order }
+//               m:<id>:<YYYY-MM> → { interest?, balance? }   (interest that month; balance: a bank balance from before 1.3)
+//               x:<id> → { acct, date, ym, amt, dir: 'in'|'out'|'bal', note?, at }
+//                 'bal' = what was in it on that date (the newest is where its amount starts);
+//                 'in' / 'out' = money in or out that isn't in one of its pots.
 // A pot lives in one account at most.
+export const ACCOUNT_KINDS = [
+  ['jspend', 'spend', 'j', 'Joint spending', 'like 2Up', '💳'],
+  ['pspend', 'spend', 'me', 'Personal spending', '', '👛'],
+  ['psave', 'save', 'me', 'Personal saver', '', '🐷'],
+  ['jsave', 'save', 'j', 'Joint saver', 'like 2Up Savers', '🍯'],
+].map(([id, kind, owner, label, eg, emoji]) => ({ id, kind, owner, label, eg, emoji }));
+export const kindOf = acc => (acc.kind === 'spend' ? 'spend' : 'save');
+export const kindInfo = acc => ACCOUNT_KINDS.find(k => k.kind === kindOf(acc) && (k.owner === 'j') === (acc.owner === 'j'));
 export function accounts() {
   return memo('accts', () => Object.entries(vals('accounts')).filter(([k]) => k.startsWith('a:')).map(([k, a]) => ({ id: k.slice(2), pots: [], ...a }))
     .sort((x, y) => (x.order ?? 0) - (y.order ?? 0) || String(x.name).localeCompare(String(y.name))));
@@ -491,51 +533,112 @@ export function potNow(pot) {
   if (pot.type === 'goal') { const l = lifetime(pot).tot; return r2(l.put - l.used); }
   return potStats(pot, nowYear()).tot.balance;
 }
-/** An account's pots, its interest (that month, that year, ever) and how that compares with the bank. */
+/**
+ * An account: what's actually in it now, its pots (what the plan says is set aside in it), and
+ * its interest in the month on show and that year so far.
+ *   now   = the newest balance + everything in and out since (null until a balance is put in)
+ *   since = { in, out, ticked, interest } after that balance (out is negative)
+ *   free  = now − what its pots hold: money that isn't in a pot (or, below 0, the pots say more than is there)
+ */
 export function accountStats(acc, ym) {
-  const pots = acc.pots.map(getPot).filter(p => p && !p.archived);
-  const perPot = pots.map(p => ({ pot: p, now: potNow(p) }));
-  const inPots = r2(perPot.reduce((t, x) => t + x.now, 0));
-  const months = Object.entries(vals('accounts')).filter(([k]) => k.startsWith(`m:${acc.id}:`)).map(([k, v]) => ({ ym: k.split(':')[2], ...v }));
-  const interest = { month: 0, year: 0, all: 0 };
-  let bank = null;
-  for (const m of months) {
-    const i = +m.interest || 0;
-    if (m.ym <= ym) interest.all += i;
-    if (m.ym === ym) interest.month += i;
-    if (m.ym.slice(0, 4) === ym.slice(0, 4) && m.ym <= ym) interest.year += i;
-    if (m.balance != null && m.ym <= ym && (!bank || m.ym > bank.ym)) bank = { ym: m.ym, amt: +m.balance };
+  return memo(`acst:${acc.id}:${ym}`, () => {
+    const pots = acc.pots.map(getPot).filter(p => p && !p.archived);
+    const perPot = pots.map(p => ({ pot: p, now: potNow(p) }));
+    const inPots = r2(perPot.reduce((t, x) => t + x.now, 0));
+    const interest = { month: 0, year: 0 };
+    for (const [k, v] of Object.entries(vals('accounts'))) {
+      if (!k.startsWith(`m:${acc.id}:`)) continue;
+      const m = k.split(':')[2], i = +v.interest || 0;
+      if (m === ym) interest.month += i;
+      if (m.slice(0, 4) === ym.slice(0, 4) && m <= ym) interest.year += i;
+    }
+    interest.month = r2(interest.month); interest.year = r2(interest.year);
+    const start = accountStart(acc), moves = accountMoves(acc, start);
+    const sum = what => r2(moves.filter(x => x.what === what).reduce((t, x) => t + x.amt, 0));
+    const since = { in: sum('in'), out: sum('out'), ticked: sum('tick'), interest: sum('interest') };
+    const now = start ? r2(start.amt + since.in + since.out + since.ticked + since.interest) : null;
+    return { pots, perPot, inPots, interest, start, since, now, free: now == null ? null : r2(now - inPots) };
+  });
+}
+const lastDay = ym => `${ym}-${String(new Date(+ym.slice(0, 4), +ym.slice(5, 7), 0).getDate()).padStart(2, '0')}`;
+/** Where an account's amount starts: the newest balance put in (else, from before 1.3, the newest bank balance of a month, at its end). */
+export function accountStart(acc) {
+  const bal = accountEntries(acc.id).find(x => x.dir === 'bal');
+  if (bal) return { amt: +bal.amt || 0, date: bal.date, ym: bal.ym || String(bal.date).slice(0, 7), at: bal.at || 0, entry: bal };
+  let best = null;
+  for (const [k, v] of Object.entries(vals('accounts'))) {
+    if (!k.startsWith(`m:${acc.id}:`) || v?.balance == null) continue;
+    const m = k.split(':')[2];
+    if (!best || m > best.ym) best = { ym: m, amt: +v.balance };
   }
-  for (const k in interest) interest[k] = r2(interest[k]);
-  // Money in the account that isn't in a pot: dated entries put in or taken out by hand (x:<id>).
-  const loose = accountEntries(acc.id).filter(x => x.ym <= ym);
-  const outside = r2(loose.reduce((t, x) => t + (x.dir === 'out' ? -1 : 1) * (+x.amt || 0), 0));
-  const total = r2(inPots + interest.all + outside);
-  return { pots, perPot, inPots, interest, outside, total, bank, diff: bank ? r2(bank.amt - total) : null, months };
+  // Everything in that month counts as already in that balance.
+  return best ? { amt: best.amt, date: lastDay(best.ym), ym: best.ym, at: Infinity, old: true } : null;
 }
 /**
- * An account's own money in and out, outside any pot (a past deposit, a starting balance, a
- * withdrawal): accounts doc x:<id> → { acct, date, ym, amt, dir: 'in'|'out', note? }.
+ * Money in and out of an account after its balance: its own entries, money put into or taken out
+ * of its pots (by hand, or through Owings), its pots' months ticked done, and interest.
+ * Something on the balance's own day counts when it was put in after the balance was.
+ */
+function accountMoves(acc, start) {
+  if (!start) return [];
+  const sYM = start.ym, out = [];
+  const after = (date, ym, at) => (date ? date > start.date || (date === start.date && (at || 0) > start.at) : (ym || '') > sYM);
+  const both = r => r2((+r.a || 0) + (+r.b || 0));
+  for (const x of accountEntries(acc.id)) if (x.dir !== 'bal' && after(x.date, x.ym, x.at)) out.push({ what: x.dir === 'out' ? 'out' : 'in', amt: (x.dir === 'out' ? -1 : 1) * (+x.amt || 0) });
+  for (const p of acc.pots.map(getPot).filter(Boolean)) {
+    for (const y of yearsOfPot(p)) {
+      // Money moved into a pot from this account (from: 'acct') was already in it.
+      for (const d of manualDeposits(p.id, y)) if (d.from !== 'acct' && after(d.date, d.ym, d.at)) out.push({ what: 'in', amt: both(d) });
+      for (const u of manualUses(p.id, y)) if (after(u.date, u.ym, u.at)) out.push({ what: 'out', amt: -both(u) });
+      const cells = cellsOf(p.id, y);
+      for (const s of ['a', 'b']) for (const [m, c] of Object.entries(cells[s] || {})) {
+        if (c.done && (m > sYM || (m === sYM && (c.at || 0) > start.at))) out.push({ what: 'tick', amt: cellSaved(c) });
+      }
+    }
+    for (const u of owingUsesOf(p.id)) if (after(u.date, u.ym, u.at)) out.push({ what: 'out', amt: -both(u) });
+  }
+  for (const [k, rec] of Object.entries(memo('accrecs', () => store.merged('accounts')))) {
+    if (!k.startsWith(`m:${acc.id}:`) || !rec.v || !+rec.v.interest) continue;
+    const m = k.split(':')[2];
+    if (m > sYM || (m === sYM && (rec.t || 0) > start.at)) out.push({ what: 'interest', amt: +rec.v.interest });
+  }
+  return out;
+}
+const byNewest = (p, q) => String(q.date || q.ym).localeCompare(String(p.date || p.ym)) || (q.at || 0) - (p.at || 0);
+/**
+ * An account's own entries: balances ('bal'), and money in or out that isn't in one of its pots
+ * (a past deposit, a withdrawal): accounts doc x:<id> → { acct, date, ym, amt, dir, note?, at }.
  */
 export function accountEntries(acctId) {
   return Object.entries(vals('accounts')).filter(([k, x]) => k.startsWith('x:') && x && x.acct === acctId)
-    .map(([k, x]) => ({ ...x, id: k.slice(2), kind: 'account' }))
-    .sort((p, q) => String(q.date || q.ym).localeCompare(String(p.date || p.ym)));
+    .map(([k, x]) => ({ ...x, id: k.slice(2), kind: 'account' })).sort(byNewest);
 }
 export function saveAccountEntry(x) { const { id, kind, ...rest } = x; store.setField('accounts', 'x:' + id, rest); }
 export function deleteAccountEntry(id) { store.setField('accounts', 'x:' + id, null); }
-/** Everything put in or taken out by hand for an account: its own entries and its pots' (newest first). */
+/** Everything put in, taken out or checked by hand for an account: its own entries and its pots' (newest first). */
 export function accountHistory(acc) {
   const pots = acc.pots.map(getPot).filter(Boolean), out = accountEntries(acc.id).map(x => ({ ...x, potName: null }));
   for (const p of pots) for (const y of yearsOfPot(p)) {
     manualDeposits(p.id, y).forEach(d => out.push({ ...d, dir: 'in', amt: r2((+d.a || 0) + (+d.b || 0)), potId: p.id, potName: p.name }));
     manualUses(p.id, y).forEach(u => out.push({ ...u, dir: 'out', amt: r2((+u.a || 0) + (+u.b || 0)), potId: p.id, potName: p.name }));
   }
-  return out.sort((p, q) => String(q.date || q.ym).localeCompare(String(p.date || p.ym)));
+  return out.sort(byNewest);
+}
+/** Bills in Budget paid from (or into) an account, matched by its name: the items and what they come to a year. */
+export function accountBills(acc) {
+  const n = String(acc.name || '').trim().toLowerCase(), same = s => String(s || '').trim().toLowerCase() === n;
+  const from = budgetItems().filter(i => same(i.acct)), to = budgetItems().filter(i => same(i.to));
+  const yearly = list => r2(list.reduce((t, i) => t + perYear(i.amt, i.freq), 0));
+  return { from, to, fromYear: yearly(from), toYear: yearly(to) };
 }
 
-/** Interest from every account in a year. */
-export const interestInYear = y => r2(Object.entries(vals('accounts')).filter(([k]) => k.startsWith('m:') && k.split(':')[2].startsWith(y + '-')).reduce((t, [, v]) => t + (+v.interest || 0), 0));
+/** Interest from every account (or the accounts `keep` says) in a year. */
+export const interestInYear = (y, keep = null) => r2(Object.entries(vals('accounts')).filter(([k]) => {
+  if (!k.startsWith('m:') || !k.split(':')[2].startsWith(y + '-')) return false;
+  if (!keep) return true;
+  const a = accounts().find(x => x.id === k.split(':')[1]);
+  return !!a && keep(a);
+}).reduce((t, [, v]) => t + (+v.interest || 0), 0));
 
 // ── When a pot's money is needed (save it by a date) ─────────────────────
 // A yearly pot's dates are that year's: py.due = [{ id, ym, amt, note? }] (car insurance, $2,600 by March).

@@ -120,7 +120,7 @@ function entryRow(e) {
 
 // ── Adding or changing a purchase ────────────────────────────────────────
 function covSelect(id, value, { rest = false } = {}) {
-  const pots = M.allPots(), groups = [['j', 'Our pots'], ...bothSlots().map(s => [s, `${nameOf(s)}’s pots`])];
+  const pots = M.allPots(), groups = [['j', 'Shared pots'], ...bothSlots().map(s => [s, `${nameOf(s)}’s pots`])];
   const opt = (v, l) => `<option value="${esc(v)}" ${v === value ? 'selected' : ''}>${esc(l)}</option>`;
   return `<select class="inp" id="${id}" data-cov>
     <optgroup label="People">${opt('both', 'Half each')}${bothSlots().map(s => opt(s, `${nameOf(s)}’s`)).join('')}${opt('j', 'Joint money · nobody owes')}${opt('tbd', 'Decide later')}</optgroup>

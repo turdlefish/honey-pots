@@ -3,7 +3,7 @@
 import * as store from './store.js';
 import * as M from './model.js';
 import { jar } from './jar.js';
-import { nameOf, ownerColor, ownerTag, ownerPossessive, bothSlots, person } from './people.js';
+import { nameOf, ownerColor, ownerTag, ownerPossessive, bothSlots, person, whoSeg, whoPref, setPref } from './people.js';
 import { esc, money, money0, r2, toast, parseMoney, MON, monShort, openSheet, closeSheet, confirmSheet } from './ui.js';
 import { defaultYear, newPot, spreadFrom, shortTag, showMonth } from './pots.js';
 
@@ -19,11 +19,13 @@ export function renderYears(view, ctx) {
   if (year == null) year = years.includes(now) || !years.length ? now : years[years.length - 1];
   const y = year;
   const prev = years.filter(v => v < y).pop(), next = years.find(v => v > y);
-  const pots = potsInYear(y);
+  // Whose pots (per phone): All, one of you (your own pots), or the Shared ones.
+  const who = whoPref('yearsWho'), keep = p => who === 'all' || p.owner === who;
+  const pots = potsInYear(y).filter(keep);
 
-  // What went in each calendar month, per person (money for next year's pots counts in the month it went in).
-  const months = M.monthsOf(y), slots = bothSlots();
-  const perMonth = months.map(m => Object.fromEntries(slots.map(s => [s, r2(M.monthLines(s, m).reduce((t, l) => t + M.cellSaved(l.cell), 0) + M.depositsInMonth(s, m))])));
+  // What went in each calendar month, per person, into the pots on show (money for next year's pots counts in the month it went in).
+  const months = M.monthsOf(y), slots = who === 'a' || who === 'b' ? [who] : bothSlots();
+  const perMonth = months.map(m => Object.fromEntries(slots.map(s => [s, r2(M.monthLines(s, m).filter(l => keep(l.pot)).reduce((t, l) => t + M.cellSaved(l.cell), 0) + M.depositsInMonth(s, m, who === 'all' ? null : keep))])));
   const inYear = Object.fromEntries(slots.map(s => [s, r2(perMonth.reduce((t, x) => t + x[s], 0))]));
   const max = Math.max(1, ...perMonth.map(x => slots.reduce((t, s) => t + x[s], 0)));
   const used = r2(pots.reduce((t, p) => t + M.potStats(p, y).tot.used, 0));
@@ -43,11 +45,11 @@ export function renderYears(view, ctx) {
       <div class="ytable">${list.map(p => {
         const st = M.potStats(p, y), t = st.tot, lv = M.jarLevels(st);
         const res = !t.target ? `<span class="muted">${money0(t.balance)} in it</span>`
-          : t.reached ? `<span class="good">✓ ${t.have > t.target + 0.5 ? money0(t.have - t.target) + ' over' : 'made it'}</span>`
+          : t.reached ? `<span class="good">✅ ${t.have > t.target + 0.5 ? money0(t.have - t.target) + ' over' : 'reached'}</span>`
             : y < now ? `<span class="warn">${money0(t.left)} short</span>` : `<span class="muted">${money0(t.left)} to go</span>`;
         const pct = t.target ? Math.min(100, (t.have / t.target) * 100) : 0, usedPct = t.target ? Math.min(pct, (t.used / t.target) * 100) : 0;
-        return `<button class="yrow" data-pot="${p.id}">${jar({ ...lv, size: 34, emoji: p.emoji, lid: ownerColor(p.owner), reached: t.reached })}
-          <div><div class="nm">${esc(p.name)}${p.archived ? ' <span class="tag c-peach">put away</span>' : ''}</div>
+        return `<button class="yrow${t.reached ? ' reached' : ''}" data-pot="${p.id}">${jar({ ...lv, size: 34, emoji: p.emoji, lid: ownerColor(p.owner), reached: t.reached })}
+          <div><div class="nm">${esc(p.name)}${t.reached ? ' ✅' : ''}${p.archived ? ' <span class="tag c-peach">put away</span>' : ''}</div>
             <div class="meta">${t.target ? `${p.type === 'goal' ? 'Goal' : 'Target'} ${money0(t.target)} · ` : ''}${t.carry ? `${money0(t.carry)} from before · ` : ''}saved ${money0(t.saved)} · used ${money0(t.used)}</div>
             ${t.target ? `<div class="bar"><i style="width:${pct - usedPct}%"></i><i style="width:${usedPct}%"></i></div>` : ''}</div>
           <div class="res">${res}</div></button>`;
@@ -62,29 +64,34 @@ export function renderYears(view, ctx) {
       <div class="row-btns"><button class="btn" data-plan="${ny}">Plan ${ny} ›</button></div></section>`;
   })() : '';
 
-  view.innerHTML = `<div class="stepper"><button class="iconbtn" data-y="${prev ?? ''}" ${prev == null ? 'disabled' : ''} aria-label="Year before">‹</button>
+  const interest = M.interestInYear(y, who === 'all' ? null : a => a.owner === who);
+  const solo = who === 'a' || who === 'b';
+  const title = who === 'all' ? `${y} at a glance` : who === 'j' ? `${y}: the shared pots` : `${y}: ${esc(ownerPossessive(who))} pots`;
+  view.innerHTML = `${whoSeg(who, 'ywho', 'Whose pots')}
+    <div class="stepper"><button class="iconbtn" data-y="${prev ?? ''}" ${prev == null ? 'disabled' : ''} aria-label="Year before">‹</button>
       <span class="label">${y}<span class="tiny">${y === now ? 'this year' : y < now ? 'looking back' : 'coming up'}</span></span>
       <button class="iconbtn" data-y="${next ?? ''}" ${next == null ? 'disabled' : ''} aria-label="Year after">›</button></div>
     <div class="cols">
-      <section class="card c-honey span"><span class="tape" aria-hidden="true"></span>
-        <div class="card-head"><h3>${y} at a glance</h3></div>
+      <section class="card ${solo ? 'pcol' : 'c-honey'} span"${solo ? ` style="--pc:${esc(ownerColor(who))}"` : ''}><span class="tape" aria-hidden="true"></span>
+        <div class="card-head"><h3>${title}</h3></div>
         <div class="stats">
-          <div class="stat"><div class="k">Put in</div><div class="v">${money0(slots.reduce((t, s) => t + inYear[s], 0))}</div><div class="x">${slots.map(s => `${esc(nameOf(s))} ${money0(inYear[s])}`).join(' · ')}</div></div>
+          <div class="stat"><div class="k">Put in</div><div class="v">${money0(slots.reduce((t, s) => t + inYear[s], 0))}</div><div class="x">${slots.length > 1 ? slots.map(s => `${esc(nameOf(s))} ${money0(inYear[s])}`).join(' · ') : who === 'all' ? '' : `into ${esc(nameOf(who))}’s own pots`}</div></div>
           <div class="stat"><div class="k">Used</div><div class="v">${money0(used)}</div><div class="x">taken out of pots</div></div>
           <div class="stat"><div class="k">Targets reached</div><div class="v">${reached} of ${withTarget.length}</div><div class="x">${y < now ? 'by the end of the year' : 'so far'}</div></div>
-          ${M.interestInYear(y) ? `<div class="stat"><div class="k">Interest</div><div class="v">${money(M.interestInYear(y))}</div><div class="x">from your savings accounts</div></div>` : ''}
+          ${interest ? `<div class="stat"><div class="k">Interest</div><div class="v">${money(interest)}</div><div class="x">from ${who === 'all' ? 'your' : who === 'j' ? 'the shared' : `${esc(nameOf(who))}’s`} savers</div></div>` : ''}
         </div>
         ${bars}
         <div class="row-btns"><button class="btn sm" data-plan="${y}">✎ Change ${y}’s pots</button></div>
       </section>
       ${planNext}
-      ${[...slots, 'j'].map(groupCard).join('')}
-      ${!pots.length ? `<div class="empty span">No pots with money in ${y}.</div>` : ''}
+      ${(who === 'all' ? [...bothSlots(), 'j'] : [who]).map(groupCard).join('')}
+      ${!pots.length ? `<div class="empty span">No ${who === 'j' ? 'shared ' : solo ? `${esc(ownerPossessive(who))} ` : ''}pots with money in ${y}.</div>` : ''}
     </div>`;
 
   view.onclick = e => {
     const b = e.target.closest('button');
     if (!b) return;
+    if (b.dataset.ywho) { setPref('yearsWho', b.dataset.ywho); return ctx.render(); }
     if (b.dataset.y) { year = +b.dataset.y; return ctx.render(); }
     if (b.dataset.pot) return ctx.go(`pot-${b.dataset.pot}@${y}`);
     if (b.dataset.plan) return ctx.go('plan-' + b.dataset.plan);

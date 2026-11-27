@@ -3,8 +3,9 @@
 
 import * as store from './store.js';
 import * as M from './model.js';
-import { nameOf, ownerColor, ownerTag, bothSlots, pref, setPref, person } from './people.js';
+import { nameOf, ownerColor, ownerTag, bothSlots, pref, setPref, person, whoSeg as whoSwitch, whoPref } from './people.js';
 import { esc, money, money0, r2, uid, toast, openSheet, closeSheet, confirmSheet, parseMoney } from './ui.js';
+import { xbudgets, xbudget, renderXBudget, editXBudget } from './xbudget.js';
 
 const PERIODS = [['w', 'Week'], ['f', 'Fortnight'], ['m', 'Month'], ['y', 'Year']];
 const GROUP_EMOJI = ['📺', '🏠', '⚡', '🛒', '📱', '🩺', '🚗', '🐾', '💞', '📈', '🏦', '🎓', '🎵', '🧾', '✨', '🍜'];
@@ -14,8 +15,13 @@ const inPeriod = (yearly, per) => M.fromYear(yearly, per);
 // shared ones), or just the shared ones.
 export function renderBudget(view, ctx) {
   ctx.topbar.set('Budget');
+  // The shared budget, or one of the separate ones (one person's own budget sheet): a switch at the top.
+  const book = pref('budgetBook', ''), books = xbudgets();
+  const bookSeg = `<div class="toprow"><div class="seg bookseg" role="group" aria-label="Which budget"><button data-book="" aria-pressed="${!book || !xbudget(book)}">🧾 Our budget</button>${books.map(b => `<button data-book="${esc(b.id)}" aria-pressed="${b.id === book}">🍩 ${esc(b.name)}</button>`).join('')}</div>
+    <button class="btn sm ghost" data-newbook>＋ Separate budget</button></div>`;
+  if (book && xbudget(book)) return renderXBudget(view, ctx, book, bookSeg);
   const per = pref('budgetPer', 'm'), perWord = M.FREQ_LABEL[per];
-  const whoPref = pref('budgetWho', 'all'), who = ['all', 'a', 'b', 'j'].includes(whoPref) ? whoPref : 'all';
+  const who = whoPref('budgetWho');
   const groups = M.budgetGroups(), all = M.budgetItems(), tot = M.budgetTotals();
   // Paid from / paid to filters (per phone): an account's name, '_none' for not set, '' for any.
   const fromPref = pref('budgetFrom', ''), toPref = pref('budgetTo', '');
@@ -79,14 +85,13 @@ export function renderBudget(view, ctx) {
       <button class="addline" data-additem="${g.id}">＋ Add to ${esc(g.name)}</button></section>`;
   };
 
-  const whoSeg = `<div class="seg wide" role="group" aria-label="Whose budget">${[['all', 'Everyone'], ...bothSlots().map(s => [s, nameOf(s)]), ['j', 'Shared']]
-    .map(([k, l]) => `<button data-who="${k}" aria-pressed="${who === k}">${esc(l)}</button>`).join('')}</div>`;
+  const whoSeg = whoSwitch(who, 'who', 'Whose budget');
   const head = who === 'all' ? `<div class="sumgrid">${bothSlots().map(s => psum(s)).join('')}</div>
         <p class="hint">Bills count your share of the ones you split, by the account they’re paid from (set “Paid from” on a bill). Savings is what each of you puts into pots this month (Pots tab); a pot kept apart, like the house deposit, has its own line: this month’s amount from its plan.</p>`
     : who === 'j' ? `${sharedSum()}<p class="hint">Only the bills you share, with what each of you pays.</p>`
       : `${psum(who, true)}<p class="hint">${esc(nameOf(who))}’s own bills, plus ${esc(nameOf(who))}’s share of the shared ones.</p>`;
 
-  view.innerHTML = `${whoSeg}
+  view.innerHTML = `${bookSeg}${whoSeg}
     <div class="toprow"><div class="seg" role="group" aria-label="Show amounts per">${PERIODS.map(([k, l]) => `<button data-per="${k}" aria-pressed="${per === k}">${l}</button>`).join('')}</div>
       <button class="btn sm ghost" data-newgroup>＋ New group</button></div>
     ${filters}${fsum}
@@ -107,6 +112,8 @@ export function renderBudget(view, ctx) {
   view.onclick = e => {
     const b = e.target.closest('button');
     if (!b) return;
+    if (b.dataset.book != null) { setPref('budgetBook', b.dataset.book); return ctx.render(); }
+    if (b.hasAttribute('data-newbook')) return editXBudget(null, ctx);
     if (b.hasAttribute('data-clearf')) { setPref('budgetFrom', ''); setPref('budgetTo', ''); return ctx.render(true); }
     if (b.dataset.who) { setPref('budgetWho', b.dataset.who); return ctx.render(); }
     if (b.dataset.per) { setPref('budgetPer', b.dataset.per); return ctx.render(true); }
@@ -153,7 +160,8 @@ function editIncome(slot, ctx) {
 function editItem(item, groupId, ctx, whoNew = 'j') {
   const isNew = !item;
   const cur = item ? { ...item } : { id: uid(), name: '', amt: null, freq: 'm', who: whoNew, group: groupId || '', order: Date.now() / 1e13 };
-  const accounts = [...new Set(M.budgetItems().flatMap(i => [i.acct, i.to]).filter(Boolean))].sort();
+  // Your accounts (Pots → Accounts) first, so a bill's "Paid from" matches the account's name, then names used before.
+  const accounts = [...new Set([...M.accounts().map(a => a.name), ...[...new Set(M.budgetItems().flatMap(i => [i.acct, i.to]).filter(Boolean))].sort()])];
   const custom = cur.who === 'j' && cur.split != null && Math.abs(cur.split - 0.5) > 0.004;
   const shareA = cur.amt ? r2(cur.amt * (cur.split ?? 0.5)) : '';
   const el = openSheet(`<h3>${isNew ? 'A new bill or cost' : esc(cur.name)}</h3>

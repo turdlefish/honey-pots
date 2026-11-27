@@ -6,6 +6,7 @@
 // same pots, months and purchases (they keep their ids), so nothing doubles up.
 
 import * as store from './store.js';
+import * as M from './model.js';
 import { person } from './people.js';
 import { esc, toast, openSheet, closeSheet } from './ui.js';
 
@@ -55,6 +56,7 @@ function swapped(seed) {
     }
     out.owings[ym] = nf;
   }
+  if (out.xbudgets) out.xbudgets = swapX(out.xbudgets);
   out.people = { a: seed.people.b, b: seed.people.a };
   return out;
 }
@@ -96,5 +98,38 @@ function write(s) {
   put('budget', s.budget);
   put('settings', s.settings);
   for (const [ym, f] of Object.entries(s.owings)) put('o' + ym, f);
+  if (s.xbudgets) n += writeXBudgets(s.xbudgets);
   return n;
+}
+
+/**
+ * The separate budgets from the spreadsheet (one person's own budget sheet), on their own: only what
+ * isn't here yet, so bringing it in again never undoes a change you've made since.
+ */
+function writeXBudgets(fields) {
+  const have = M.vals('xbudgets'), fresh = Object.fromEntries(Object.entries(fields).filter(([k]) => !(k in have)));
+  if (Object.keys(fresh).length) store.setFields('xbudgets', fresh);
+  return Object.keys(fresh).length;
+}
+const swapX = f => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, k.startsWith('b:') ? { ...v, owner: sw(v.owner) } : v]));
+export async function importXBudgets(ctx) {
+  const seed = await seedAvailable();
+  if (!seed?.xbudgets) return toast('No separate budget in the import');
+  const names = Object.entries(seed.xbudgets).filter(([k]) => k.startsWith('b:')).map(([, b]) => b.name).join(', ');
+  const me = person(store.me()).name.toLowerCase(), guess = me.startsWith(seed.people.b.toLowerCase()) ? 'b' : 'a';
+  const el = openSheet(`<h3>Bring in ${esc(names)}</h3>
+    <p class="small">From the spreadsheet’s separate budget sheet: the pay, every cost in its groups, and the doughnut. It only adds what isn’t here yet, and nothing else changes.</p>
+    <div class="field"><span>Which one is you?</span><div class="seg wide" id="ix-who">${['a', 'b'].map(k => `<button type="button" data-who="${k}" aria-pressed="${k === guess}">I’m ${esc(seed.people[k])}</button>`).join('')}</div></div>
+    <div class="row-btns end"><button class="btn ghost" data-close>Cancel</button><button class="btn primary" data-go-import>Bring it in</button></div>`);
+  el.onclick = e => {
+    const w = e.target.closest('[data-who]');
+    if (w) { el.querySelectorAll('#ix-who [data-who]').forEach(x => x.setAttribute('aria-pressed', String(x === w))); return; }
+    if (e.target.closest('[data-close]')) return closeSheet();
+    if (!e.target.closest('[data-go-import]')) return;
+    const iAm = el.querySelector('#ix-who [aria-pressed="true"]').dataset.who;
+    const n = writeXBudgets(iAm === store.me() ? seed.xbudgets : swapX(seed.xbudgets));
+    closeSheet();
+    toast(n ? `Brought in ${n} things: Budget → 🍩 ${names}` : 'It’s all here already');
+    ctx.go('budget');
+  };
 }
