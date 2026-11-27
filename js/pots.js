@@ -4,7 +4,7 @@ import * as store from './store.js';
 import * as M from './model.js';
 import { jar } from './jar.js';
 import { person, bothSlots, ownerName, ownerColor, ownerTag, ownerPossessive, nameOf, pref, setPref, COLORS } from './people.js';
-import { esc, money, money0, r2, uid, toast, openSheet, closeSheet, askAmount, confirmSheet, parseMoney, monthName, monShort, ymLabel, MON } from './ui.js';
+import { esc, money, money0, r2, uid, toast, openSheet, closeSheet, askAmount, confirmSheet, parseMoney, monthName, monShort, ymLabel, MON, isoDay } from './ui.js';
 
 let month = null;            // the month shown on Pots (YYYY-MM)
 let allYear = null;          // the year shown on "All pots"
@@ -60,6 +60,9 @@ export function renderPots(view, ctx) {
     if (t.dataset.mode) { setPref('potsView', t.dataset.mode); return ctx.render(); }
     if (t.dataset.recordout) return recordFromAccount(t.dataset.recordout, 'out', ctx);
     if (t.dataset.recordin) return recordFromAccount(t.dataset.recordin, 'in', ctx);
+    if (t.dataset.acctin || t.dataset.acctout) { const acc = M.accounts().find(a => a.id === (t.dataset.acctin || t.dataset.acctout)), ps = acc.pots.map(M.getPot).filter(Boolean); return moneyMove(null, null, t.dataset.acctin ? 'in' : 'out', ctx, { pots: ps, acct: acc, ym: month }); }
+    if (t.dataset.hist) return editHistory(t.dataset.hist, ctx);
+    if (t.dataset.allhist) return historySheet(t.dataset.allhist, ctx);
     if (t.dataset.m) { month = t.dataset.m === '0' ? M.nowYM() : M.addMonths(month, +t.dataset.m); return ctx.render(true); }
     if (t.dataset.ay) { allYear = +t.dataset.ay; return ctx.render(true); }
     if (t.dataset.edityear) return ctx.go(`plan-${t.dataset.edityear}@pots`);
@@ -132,8 +135,8 @@ function accountsView(who = 'all') {
     const diff = st.diff;
     return `<section class="card ${a.owner === 'j' ? 'c-honey' : 'pcol'}"${a.owner !== 'j' ? ` style="--pc:${esc(ownerColor(a.owner))}"` : ''}><span class="tape" aria-hidden="true"></span>
       <div class="card-head"><h3>🏦 ${esc(a.name)}</h3>${ownerTag(a.owner, a.owner === 'j' ? 'Both of us' : nameOf(a.owner))}<button class="iconbtn" data-acct="${a.id}" aria-label="Edit account">✎</button></div>
-      <div class="bigamt">${money(st.total)}<small>in it, by the pots</small></div>
-      <div class="hint">Pots ${money(st.inPots)}${st.interest.all ? ` + interest ${money(st.interest.all)}` : ''}${a.note ? ` · ${esc(a.note)}` : ''}</div>
+      <div class="bigamt">${money(st.total)}<small>in it, by the app</small></div>
+      <div class="hint">Pots ${money(st.inPots)}${st.interest.all ? ` + interest ${money(st.interest.all)}` : ''}${st.outside ? ` ${st.outside < 0 ? '−' : '+'} ${money(Math.abs(st.outside))} outside the pots` : ''}${a.note ? ` · ${esc(a.note)}` : ''}</div>
       ${st.perPot.length ? `<div class="chips">${st.perPot.map(x => `<button class="chip" data-pot="${x.pot.id}">${esc(x.pot.emoji || '🍯')} ${esc(x.pot.name)} <span class="muted">${money0(x.now)}</span></button>`).join('')}</div>`
         : '<p class="small muted">No pots ticked yet. Tap ✎ to choose which pots live here.</p>'}
       <div class="kv">
@@ -141,10 +144,14 @@ function accountsView(who = 'all') {
         <div><span class="k">Interest so far in ${esc(month.slice(0, 4))}</span><b class="num">${money(st.interest.year, { cents: true })}</b></div>
         <div><span class="k">What the bank says <span class="tiny">(optional)</span></span>${mo.balance != null ? `<button class="amtbtn" data-balance="${a.id}"><b>${money(mo.balance, { cents: true })}</b><span class="pen">✎</span></button>` : `<button class="linkbtn" data-balance="${a.id}">＋ Add the balance</button>`}</div>
       </div>
-      ${diff != null ? `<div class="sumline ${Math.abs(diff) < 1 ? 'ok' : diff > 0 ? 'short' : 'over'}">${Math.abs(diff) < 1 ? '✓ The bank matches the pots' : diff > 0
-        ? `The bank has ${money(diff)} more than the pots (${esc(ymLabel(st.bank.ym))})` : `The bank has ${money(-diff)} less than the pots: something taken out isn’t recorded yet?`}</div>` : ''}
-      ${diff != null && Math.abs(diff) >= 1 && st.pots.length ? `<div class="row-btns">${diff < 0 ? `<button class="btn sm" data-recordout="${a.id}">− Record money taken out</button>`
+      ${diff != null ? `<div class="sumline ${Math.abs(diff) < 1 ? 'ok' : diff > 0 ? 'short' : 'over'}">${Math.abs(diff) < 1 ? '✓ The bank matches the app' : diff > 0
+        ? `The bank has ${money(diff)} more than the app (${esc(ymLabel(st.bank.ym))})` : `The bank has ${money(-diff)} less than the app: something taken out isn’t recorded yet?`}</div>` : ''}
+      ${diff != null && Math.abs(diff) >= 1 ? `<div class="row-btns">${diff < 0 ? `<button class="btn sm" data-recordout="${a.id}">− Record money taken out</button>`
         : `<button class="btn sm ghost" data-recordin="${a.id}">＋ Record money put in</button>`}</div>` : ''}
+      <hr class="divider"><div class="eyebrow">Money in &amp; out by hand</div>
+      ${histRows(a, M.accountHistory(a).slice(0, 4))}
+      <div class="row-btns"><button class="btn sm" data-acctin="${a.id}">＋ Put money in</button><button class="btn sm" data-acctout="${a.id}">− Take money out</button>
+        ${M.accountHistory(a).length > 4 ? `<button class="linkbtn" data-allhist="${a.id}">See all ${M.accountHistory(a).length} ›</button>` : ''}</div>
     </section>`;
   };
   return `<div class="stepper"><button class="iconbtn" data-m="-1" aria-label="Month before">‹</button>
@@ -152,7 +159,7 @@ function accountsView(who = 'all') {
       <button class="iconbtn" data-m="1" aria-label="Month after">›</button></div>
     ${list.length ? `<div class="cols">${list.map(card).join('')}</div>` : `<div class="empty">Add your bank savings accounts, tick which pots live in each, and note the interest each month.<br><button class="btn sm" data-act="new-acct" style="margin-top:10px">＋ Add a savings account</button></div>`}
     ${list.length && loose.length ? `<details class="hint"><summary>${loose.length} pot${loose.length === 1 ? ' isn’t' : 's aren’t'} in an account yet</summary>${loose.map(p => esc(p.name)).join(', ')}. Tap ✎ on an account to add them.</details>` : ''}
-    <p class="hint">“By the pots” is what the pots say should be there: this year’s money in each yearly pot (and anything brought over), everything in a goal, less what was used, plus interest.</p>`;
+    <p class="hint">“By the app” is what should be there: this year’s money in each yearly pot (and anything brought over), everything in a goal, less what was used, plus interest and anything put in or taken out of the account outside the pots.</p>`;
 }
 
 function editAccount(acc, ctx) {
@@ -187,11 +194,39 @@ function editAccount(acc, ctx) {
   };
 }
 
+/** An account's dated money in and out: its own entries and its pots'. Tap one to change it. */
+function histRows(acc, list) {
+  if (!list.length) return '<p class="small muted">Nothing yet. Add past deposits or withdrawals with their dates: into a pot, or just the account (like an opening balance).</p>';
+  const when = x => esc(x.date ? new Date(x.date + 'T12:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : ymLabel(x.ym));
+  return `<div class="uses">${list.map(x => `<button class="urow plainrow" data-hist="${acc.id}|${x.kind}|${esc(x.id)}">
+      <span class="tag ${x.dir === 'in' ? 'c-mint' : 'plain'}">${x.dir === 'in' ? '＋ in' : '− out'}</span>
+      <div class="grow"><b>${esc(x.note || (x.dir === 'in' ? 'Put in' : 'Taken out'))}</b><div class="tiny muted">${when(x)} · ${x.potName ? `${esc(x.potName)}` : 'not in a pot'}</div></div>
+      <b class="num ${x.dir === 'in' ? 'good' : ''}">${x.dir === 'in' ? '+' : '−'}${money(x.amt)}</b></button>`).join('')}</div>`;
+}
+function historySheet(id, ctx) {
+  const acc = M.accounts().find(a => a.id === id);
+  const el = openSheet(`<h3>🏦 ${esc(acc.name)}: money in &amp; out</h3>${histRows(acc, M.accountHistory(acc))}<div class="row-btns end"><button class="btn ghost" data-close>Close</button></div>`);
+  el.onclick = e => {
+    if (e.target.closest('[data-close]')) return closeSheet();
+    const h = e.target.closest('[data-hist]');
+    if (h) { closeSheet(); editHistory(h.dataset.hist, ctx); }
+  };
+}
+function editHistory(key, ctx) {
+  const [id, kind, eid] = key.split('|'), acc = M.accounts().find(a => a.id === id);
+  const x = M.accountHistory(acc).find(h => h.kind === kind && h.id === eid);
+  if (!x) return;
+  const pots = acc.pots.map(M.getPot).filter(Boolean);
+  if (x.kind === 'account') return moneyMove(null, null, x.dir, ctx, { pots, acct: acc, entry: x });
+  const pot = M.getPot(x.potId);
+  moneyMove(pot, x.py, x.dir, ctx, { pots, acct: acc, entry: x });
+}
+
 /** The bank and the pots don't match: record the difference as money taken out of (or put into) one of the account's pots. */
 function recordFromAccount(id, kind, ctx) {
   const acc = M.accounts().find(a => a.id === id), st = M.accountStats(acc, month);
   const pots = st.pots, diff = Math.abs(st.diff || 0);
-  moneyMove(pots[0], null, kind, ctx, { pots, amt: diff, ym: month });
+  moneyMove(pots[0] || null, null, kind, ctx, { pots, amt: diff, ym: month, acct });
 }
 
 async function editAccountMonth(id, ym, what, ctx) {
@@ -611,7 +646,7 @@ function inOutCard(pot, y) {
   const slots = M.slotsOf(pot), amt = x => r2(slots.reduce((t, s) => t + (+x[s] || 0), 0));
   const rows = [...M.manualDeposits(pot.id, y).map(d => ({ ...d, dir: 'in' })), ...M.usesOf(pot.id, y).map(u => ({ ...u, dir: 'out' }))]
     .sort((x, z) => String(z.date || z.ym).localeCompare(String(x.date || x.ym)));
-  const when = r => esc(r.date ? new Date(r.date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : ymLabel(r.ym));
+  const when = r => esc(r.date ? new Date(String(r.date).length === 10 ? r.date + 'T12:00' : r.date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : ymLabel(r.ym));
   return `<section class="card"><div class="card-head"><h3>Money in &amp; out by hand</h3></div>
     <div class="row-btns"><button class="btn sm" data-putin>＋ Put money in</button><button class="btn sm" data-takeout>− Take money out</button></div>
     ${rows.length ? `<div class="uses">${rows.map(r => `<button class="urow plainrow" ${r.dir === 'in' ? `data-dep="${esc(r.id)}"` : r.kind === 'owing' ? `data-owing="${esc(r.ym)}"` : `data-use="${esc(r.id)}"`}>
@@ -626,55 +661,77 @@ function inOutCard(pot, y) {
  * Put money in (a past deposit, a lump sum) or take money out of a pot, by either of you.
  * opts.pots: let them pick which pot (from a savings account); opts.entry: change one already there.
  */
-function moneyMove(pot, y, kind, ctx, { pots = null, amt = null, ym = null, entry = null } = {}) {
-  const out = kind === 'out';
-  let cur = pot;
+function moneyMove(pot, y, kind, ctx, { pots = null, amt = null, ym = null, entry = null, acct = null } = {}) {
+  const out = kind === 'out', ACCT = '_acct';
+  // cur is a pot, or ACCT for money in a savings account that isn't in any pot.
+  let cur = entry?.kind === 'account' ? ACCT : pot || ACCT;
+  const potOpts = acct ? [ACCT, ...(pots || [])] : (pots || []);
+  const firstDay = entry?.date || (entry?.ym ? entry.ym + '-01' : ym && ym !== M.nowYM() ? ym + '-01' : isoDay());
   const el = openSheet(`<h3 id="mm-title"></h3>
-    ${pots && pots.length > 1 ? `<label class="field"><span>Which pot</span><select class="inp" id="mm-pot">${pots.map(p => `<option value="${p.id}" ${p.id === pot.id ? 'selected' : ''}>${esc(p.emoji || '🍯')} ${esc(p.name)}</option>`).join('')}</select></label>` : ''}
+    ${potOpts.length > 1 ? `<label class="field"><span>${acct ? 'In which pot' : 'Which pot'}</span><select class="inp" id="mm-pot">${potOpts.map(p => p === ACCT
+      ? `<option value="${ACCT}" ${cur === ACCT ? 'selected' : ''}>🏦 Just ${esc(acct.name)} (not in a pot)</option>`
+      : `<option value="${p.id}" ${cur !== ACCT && p.id === cur.id ? 'selected' : ''}>${esc(p.emoji || '🍯')} ${esc(p.name)}</option>`).join('')}</select></label>` : ''}
     <div class="field" id="mm-amts"></div>
-    <label class="field"><span>Month</span><input class="inp" type="month" id="mm-ym" value="${esc(entry?.ym || ym || M.nowYM())}"></label>
-    <label class="field"><span>${out ? 'What for' : 'Note (optional)'}</span><input class="inp" id="mm-note" value="${esc(entry?.note || '')}" placeholder="${out ? 'e.g. Dentist, car insurance' : 'e.g. Tax refund, bonus'}" autocomplete="off"></label>
-    <p class="hint">${out ? 'It comes off what’s in the pot.' : 'It counts as saved in that month, on top of the monthly plan (that month’s savings check doesn’t change).'}</p>
+    <label class="field"><span>Date</span><input class="inp" type="date" id="mm-date" value="${esc(firstDay)}"></label>
+    <label class="field"><span>${out ? 'What for' : 'Note (optional)'}</span><input class="inp" id="mm-note" value="${esc(entry?.note || '')}" placeholder="${out ? 'e.g. Dentist, car insurance' : 'e.g. Tax refund, opening balance'}" autocomplete="off"></label>
+    <p class="hint" id="mm-hint"></p>
     <div class="row-btns end">${entry ? '<button class="btn danger sm" data-del>Delete</button><span class="grow"></span>' : ''}<button class="btn ghost" data-close>Cancel</button><button class="btn primary" data-save>Save</button></div>`);
+  const dateNow = () => el.querySelector('#mm-date').value || isoDay();
   const draw = () => {
-    const slots = M.slotsOf(cur);
-    el.querySelector('#mm-title').textContent = entry ? (out ? 'Money taken out' : 'Money put in') : out ? `Take money out of ${cur.name}` : `Put money into ${cur.name}`;
+    const isAcct = cur === ACCT, slots = isAcct ? [] : M.slotsOf(cur);
+    const name = isAcct ? acct?.name || 'the account' : cur.name;
+    el.querySelector('#mm-title').textContent = entry ? (out ? 'Money taken out' : 'Money put in') : out ? `Take money out of ${name}` : `Put money into ${name}`;
+    el.querySelector('#mm-hint').textContent = isAcct ? `It counts in ${name}’s total, outside the pots.`
+      : out ? 'It comes off what’s in the pot.' : 'It counts as saved on that date, on top of the monthly plan (that month’s savings check doesn’t change).';
     const val = s => (entry && entry.pot === cur.id && entry[s] != null ? entry[s] : '');
     const box = (s, label) => `<label class="field"><span>${esc(label)}</span><input class="inp money" data-mm="${s}" inputmode="decimal" placeholder="$0" value="${esc(String(val(s)))}"></label>`;
     let html;
-    if (slots.length === 1) html = `<span>How much</span><input class="inp money" data-mm="${slots[0]}" inputmode="decimal" placeholder="$0" value="${esc(String(val(slots[0]) || (amt ?? '')))}">`;
-    else if (out) html = `<span>How much</span><input class="inp money" id="mm-total" inputmode="decimal" placeholder="$0" value="${esc(String(entry ? r2((+entry.a || 0) + (+entry.b || 0)) : amt ?? ''))}">
+    if (isAcct) html = `<span>How much</span><input class="inp money" data-mm="acct" inputmode="decimal" placeholder="$0" value="${esc(String(entry?.kind === 'account' ? entry.amt : amt ?? ''))}">`;
+    else if (slots.length === 1) html = `<span>How much</span><input class="inp money" data-mm="${slots[0]}" inputmode="decimal" placeholder="$0" value="${esc(String(val(slots[0]) || (amt ?? '')))}">`;
+    else if (out) html = `<span>How much</span><input class="inp money" id="mm-total" inputmode="decimal" placeholder="$0" value="${esc(String(entry && entry.pot === cur.id ? r2((+entry.a || 0) + (+entry.b || 0)) : amt ?? ''))}">
       <div class="fields2">${slots.map(s => box(s, `From ${nameOf(s)}’s share`)).join('')}</div><span class="hint">Split by how you share this pot. Change it if one of you covers more.</span>`;
     else html = `<span>Who put it in</span><div class="fields2">${slots.map(s => box(s, nameOf(s))).join('')}</div><span class="hint">Fill in either of you, or both.</span>`;
     el.querySelector('#mm-amts').innerHTML = html;
     const total = el.querySelector('#mm-total');
     if (total) {
-      const share = () => M.jointShare(cur, cur.type === 'year' ? (y && cur.id === pot.id ? y : M.potYearFor(cur, el.querySelector('#mm-ym').value || M.nowYM())) : M.nowYear());
+      const share = () => M.jointShare(cur, cur.type === 'year' ? (y && cur.id === pot?.id ? y : M.potYearFor(cur, dateNow())) : M.nowYear());
       const split = () => { const v = parseMoney(total.value) || 0, a = r2(v * share()); el.querySelector('[data-mm="a"]').value = a || ''; el.querySelector('[data-mm="b"]').value = r2(v - a) || ''; };
       total.addEventListener('input', split);
-      if (!entry && total.value) split();
+      if (!(entry && entry.pot === cur.id) && total.value) split();
     }
   };
   draw();
-  el.querySelector('#mm-pot')?.addEventListener('change', e => { cur = M.getPot(e.target.value); draw(); });
+  el.querySelector('#mm-pot')?.addEventListener('change', e => { cur = e.target.value === ACCT ? ACCT : M.getPot(e.target.value); draw(); });
+  const removeOld = () => {
+    if (!entry) return;
+    if (entry.kind === 'account') M.deleteAccountEntry(entry.id);
+    else if (out) M.deleteUse(entry.py, entry.id);
+    else M.deleteDeposit(entry.py, entry.id);
+  };
   el.onclick = e => {
     if (e.target.closest('[data-close]')) return closeSheet();
-    if (e.target.closest('[data-del]')) {
-      if (out) M.deleteUse(entry.py, entry.id); else M.deleteDeposit(entry.py, entry.id);
-      closeSheet(); return ctx.render(true);
-    }
+    if (e.target.closest('[data-del]')) { removeOld(); closeSheet(); return ctx.render(true); }
     if (!e.target.closest('[data-save]')) return;
-    const ymv = el.querySelector('#mm-ym').value || M.nowYM(), slots = M.slotsOf(cur), rec = { id: entry?.id || uid(), pot: cur.id, ym: ymv };
+    const date = dateNow(), ymv = date.slice(0, 7), note = el.querySelector('#mm-note').value.trim();
+    if (cur === ACCT) {
+      const a = parseMoney(el.querySelector('[data-mm="acct"]').value);
+      if (!a) return toast('How much?');
+      if (entry && entry.kind !== 'account') removeOld();
+      M.saveAccountEntry({ id: entry?.kind === 'account' ? entry.id : uid(), acct: acct.id, date, ym: ymv, amt: a, dir: out ? 'out' : 'in', ...(note ? { note } : {}) });
+      closeSheet(); toast(out ? `${money(a)} taken out of ${acct.name}` : `${money(a)} put into ${acct.name}`);
+      return ctx.render(true);
+    }
+    const slots = M.slotsOf(cur), rec = { id: entry && entry.kind !== 'account' ? entry.id : uid(), pot: cur.id, date, ym: ymv };
     slots.forEach(s => { const v = parseMoney(el.querySelector(`[data-mm="${s}"]`).value); if (v) rec[s] = v; });
     if (!slots.some(s => rec[s])) return toast('How much?');
-    const note = el.querySelector('#mm-note').value.trim();
     if (note) rec.note = note;
-    // A yearly pot's money goes to the year on show (or, from an account, the year that month belongs to); a goal's to the month's year.
-    const yy = cur.type === 'goal' ? M.yearOfYM(ymv) : (y && cur.id === pot.id ? y : M.potYearFor(cur, ymv));
-    if (entry && entry.py !== yy) { if (out) M.deleteUse(entry.py, entry.id); else M.deleteDeposit(entry.py, entry.id); }
+    // A yearly pot's money goes to the year on show (or, from an account, the year that date belongs to); a goal's to the date's year.
+    const yy = cur.type === 'goal' ? M.yearOfYM(ymv) : (y && cur.id === pot?.id ? y : M.potYearFor(cur, ymv));
+    if (entry && (entry.kind === 'account' || entry.py !== yy || entry.pot !== cur.id)) removeOld();
     if (out) M.saveUse(yy, rec); else M.saveDeposit(yy, rec);
     closeSheet();
-    toast(out ? `${money(slots.reduce((t, s) => t + (rec[s] || 0), 0))} taken out of ${cur.name}` : `${money(slots.reduce((t, s) => t + (rec[s] || 0), 0))} put into ${cur.name}`);
+    const sum = slots.reduce((t, s) => t + (rec[s] || 0), 0);
+    toast(out ? `${money(sum)} taken out of ${cur.name}` : `${money(sum)} put into ${cur.name}`);
     ctx.render(true);
   };
 }

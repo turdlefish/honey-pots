@@ -477,7 +477,7 @@ export function saveAccount(acc) {
 }
 export function deleteAccount(id) {
   const fields = { ['a:' + id]: null };
-  for (const k of Object.keys(vals('accounts'))) if (k.startsWith(`m:${id}:`)) fields[k] = null;
+  for (const [k, v] of Object.entries(vals('accounts'))) if (k.startsWith(`m:${id}:`) || (k.startsWith('x:') && v && v.acct === id)) fields[k] = null;
   store.setFields('accounts', fields);
 }
 export const accountMonth = (id, ym) => vals('accounts')[`m:${id}:${ym}`] || {};
@@ -507,9 +507,33 @@ export function accountStats(acc, ym) {
     if (m.balance != null && m.ym <= ym && (!bank || m.ym > bank.ym)) bank = { ym: m.ym, amt: +m.balance };
   }
   for (const k in interest) interest[k] = r2(interest[k]);
-  const total = r2(inPots + interest.all);
-  return { pots, perPot, inPots, interest, total, bank, diff: bank ? r2(bank.amt - total) : null, months };
+  // Money in the account that isn't in a pot: dated entries put in or taken out by hand (x:<id>).
+  const loose = accountEntries(acc.id).filter(x => x.ym <= ym);
+  const outside = r2(loose.reduce((t, x) => t + (x.dir === 'out' ? -1 : 1) * (+x.amt || 0), 0));
+  const total = r2(inPots + interest.all + outside);
+  return { pots, perPot, inPots, interest, outside, total, bank, diff: bank ? r2(bank.amt - total) : null, months };
 }
+/**
+ * An account's own money in and out, outside any pot (a past deposit, a starting balance, a
+ * withdrawal): accounts doc x:<id> → { acct, date, ym, amt, dir: 'in'|'out', note? }.
+ */
+export function accountEntries(acctId) {
+  return Object.entries(vals('accounts')).filter(([k, x]) => k.startsWith('x:') && x && x.acct === acctId)
+    .map(([k, x]) => ({ ...x, id: k.slice(2), kind: 'account' }))
+    .sort((p, q) => String(q.date || q.ym).localeCompare(String(p.date || p.ym)));
+}
+export function saveAccountEntry(x) { const { id, kind, ...rest } = x; store.setField('accounts', 'x:' + id, rest); }
+export function deleteAccountEntry(id) { store.setField('accounts', 'x:' + id, null); }
+/** Everything put in or taken out by hand for an account: its own entries and its pots' (newest first). */
+export function accountHistory(acc) {
+  const pots = acc.pots.map(getPot).filter(Boolean), out = accountEntries(acc.id).map(x => ({ ...x, potName: null }));
+  for (const p of pots) for (const y of yearsOfPot(p)) {
+    manualDeposits(p.id, y).forEach(d => out.push({ ...d, dir: 'in', amt: r2((+d.a || 0) + (+d.b || 0)), potId: p.id, potName: p.name }));
+    manualUses(p.id, y).forEach(u => out.push({ ...u, dir: 'out', amt: r2((+u.a || 0) + (+u.b || 0)), potId: p.id, potName: p.name }));
+  }
+  return out.sort((p, q) => String(q.date || q.ym).localeCompare(String(p.date || p.ym)));
+}
+
 /** Interest from every account in a year. */
 export const interestInYear = y => r2(Object.entries(vals('accounts')).filter(([k]) => k.startsWith('m:') && k.split(':')[2].startsWith(y + '-')).reduce((t, [, v]) => t + (+v.interest || 0), 0));
 

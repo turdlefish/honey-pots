@@ -17,21 +17,48 @@ export function renderBudget(view, ctx) {
   const per = pref('budgetPer', 'm'), perWord = M.FREQ_LABEL[per];
   const whoPref = pref('budgetWho', 'all'), who = ['all', 'a', 'b', 'j'].includes(whoPref) ? whoPref : 'all';
   const groups = M.budgetGroups(), all = M.budgetItems(), tot = M.budgetTotals();
-  const items = who === 'all' ? all : who === 'j' ? all.filter(i => i.who === 'j') : all.filter(i => i.who === who || i.who === 'j');
+  // Paid from / paid to filters (per phone): an account's name, '_none' for not set, '' for any.
+  const fromPref = pref('budgetFrom', ''), toPref = pref('budgetTo', '');
+  const fromList = [...new Set(all.map(i => i.acct).filter(Boolean))].sort(), toList = [...new Set(all.map(i => i.to).filter(Boolean))].sort();
+  const matchFrom = i => !fromPref || (fromPref === '_none' ? !i.acct : i.acct === fromPref);
+  const matchTo = i => !toPref || (toPref === '_none' ? !i.to : i.to === toPref);
+  const items = (who === 'all' ? all : who === 'j' ? all.filter(i => i.who === 'j') : all.filter(i => i.who === who || i.who === 'j'))
+    .filter(i => matchFrom(i) && matchTo(i));
   const known = new Set(groups.map(g => g.id));
   const loose = items.filter(i => !known.has(i.group));
   // What an item costs the person on show (their share), or all of it.
   const costOf = i => (who === 'a' || who === 'b' ? M.itemShares(i)[who] : M.perYear(i.amt, i.freq));
+  // A person's bills by the account they're paid from: [[account or '', yearly share]], named accounts first.
+  const byAcct = s => {
+    const m = new Map();
+    for (const i of all) { const v = M.itemShares(i)[s]; if (v) m.set(i.acct || '', (m.get(i.acct || '') || 0) + v); }
+    return [...m.entries()].sort((x, z) => (x[0] ? 0 : 1) - (z[0] ? 0 : 1) || z[1] - x[1]);
+  };
 
+  // Where each person's pay goes: bills by the account they come out of, savings, pots kept apart, and what's left.
   const psum = (s, big = false) => {
-    const t = tot[s], p = person(s), v = y => (y == null ? '—' : money(inPeriod(y, per), { cents: false }));
+    const t = tot[s], p = person(s), v = y => (y == null ? '—' : money(inPeriod(y, per), { cents: false })), accts = byAcct(s);
+    const billRows = accts.length > 1 || (accts.length === 1 && accts[0][0])
+      ? accts.map(([a, y]) => `<div class="r"><span>${a ? `Bills from ${esc(a)}` : 'Bills, no account set'}</span><b>−${v(y)}</b></div>`).join('')
+      : `<div class="r"><span>Bills &amp; spending</span><b>−${v(t.bills)}</b></div>`;
     return `<div class="psum pcol${big ? ' big' : ''}" style="--pc:${esc(p.color)}"><div class="nm">${esc(p.name)}</div>
       <div class="r"><span>Coming in</span><b>${t.income == null ? `<button class="linkbtn" data-income="${s}">set pay ›</button>` : `<button class="linkbtn" style="color:inherit;padding:0" data-income="${s}">${v(t.income)} ✎</button>`}</b></div>
-      <div class="r"><span>Bills &amp; spending</span><b>−${v(t.bills)}</b></div>
-      <div class="r"><span>Savings</span><b>−${v(t.savings)}</b></div>
-      ${t.apart ? `<div class="r"><span>${esc(t.apartNames.join(', ') || 'Kept apart')}</span><b>−${v(t.apart)}</b></div>` : ''}
+      ${billRows}
+      <div class="r"><span>Savings <small class="muted">(this month, Pots)</small></span><b>−${v(t.savings)}</b></div>
+      ${t.apart ? `<div class="r"><span>${esc(t.apartNames.join(', ') || 'Kept apart')} <small class="muted">(this month’s plan)</small></span><b>−${v(t.apart)}</b></div>` : ''}
       <div class="r left"><span>Left over</span><b class="${t.left != null && t.left < 0 ? 'bad' : ''}">${t.left == null ? '—' : v(t.left)}</b></div></div>`;
   };
+  // With a filter on: what the bills it shows add up to, and each person's share.
+  const opt = (val, label, cur) => `<option value="${esc(val)}" ${val === cur ? 'selected' : ''}>${esc(label)}</option>`;
+  const filters = fromList.length || toList.length || fromPref || toPref ? `<div class="filters">
+      <label class="field"><span>Paid from</span><select class="inp" data-ffrom>${opt('', 'Any account', fromPref)}${fromList.map(a => opt(a, a, fromPref)).join('')}${opt('_none', 'Not set', fromPref)}</select></label>
+      <label class="field"><span>Paid to</span><select class="inp" data-fto>${opt('', 'Anywhere', toPref)}${toList.map(a => opt(a, a, toPref)).join('')}${opt('_none', 'Not set', toPref)}</select></label></div>` : '';
+  const fsum = fromPref || toPref ? (() => {
+    const yt = items.reduce((t, i) => t + M.perYear(i.amt, i.freq), 0), part = s => items.reduce((t, i) => t + M.itemShares(i)[s], 0);
+    const label = [fromPref ? `from ${fromPref === '_none' ? 'no account' : fromPref}` : '', toPref ? `to ${toPref === '_none' ? 'nowhere set' : toPref}` : ''].filter(Boolean).join(' ');
+    return `<div class="sumline short">Paid ${esc(label)}: ${money(inPeriod(yt, per))} a ${esc(perWord)} · ${bothSlots().map(s => `${esc(nameOf(s))} ${money(inPeriod(part(s), per))}`).join(' · ')}
+      <button class="linkbtn" data-clearf>Clear</button></div>`;
+  })() : '';
   const sharedSum = () => {
     const sh = all.filter(i => i.who === 'j'), whole = sh.reduce((t, i) => t + M.perYear(i.amt, i.freq), 0);
     const part = s => sh.reduce((t, i) => t + M.itemShares(i)[s], 0);
@@ -43,7 +70,7 @@ export function renderBudget(view, ctx) {
 
   const groupCard = g => {
     const list = items.filter(i => i.group === g.id);
-    if (!list.length && who !== 'all') return '';
+    if (!list.length && (who !== 'all' || fromPref || toPref)) return '';
     const yearTotal = list.reduce((t, i) => t + costOf(i), 0);
     return `<section class="card flat"><div class="card-head"><h3>${esc(g.emoji || '🧾')} ${esc(g.name)}</h3>
         <span class="small num" style="font-weight:800">${money(inPeriod(yearTotal, per))}<span class="muted">/${esc(perWord)}</span></span>
@@ -55,13 +82,14 @@ export function renderBudget(view, ctx) {
   const whoSeg = `<div class="seg wide" role="group" aria-label="Whose budget">${[['all', 'Everyone'], ...bothSlots().map(s => [s, nameOf(s)]), ['j', 'Shared']]
     .map(([k, l]) => `<button data-who="${k}" aria-pressed="${who === k}">${esc(l)}</button>`).join('')}</div>`;
   const head = who === 'all' ? `<div class="sumgrid">${bothSlots().map(s => psum(s)).join('')}</div>
-        <p class="hint">Bills count your share of the ones you split. Savings is what each of you puts into pots this month (Pots tab); a pot kept apart, like the house deposit, has its own line.</p>`
+        <p class="hint">Bills count your share of the ones you split, by the account they’re paid from (set “Paid from” on a bill). Savings is what each of you puts into pots this month (Pots tab); a pot kept apart, like the house deposit, has its own line: this month’s amount from its plan.</p>`
     : who === 'j' ? `${sharedSum()}<p class="hint">Only the bills you share, with what each of you pays.</p>`
       : `${psum(who, true)}<p class="hint">${esc(nameOf(who))}’s own bills, plus ${esc(nameOf(who))}’s share of the shared ones.</p>`;
 
   view.innerHTML = `${whoSeg}
     <div class="toprow"><div class="seg" role="group" aria-label="Show amounts per">${PERIODS.map(([k, l]) => `<button data-per="${k}" aria-pressed="${per === k}">${l}</button>`).join('')}</div>
       <button class="btn sm ghost" data-newgroup>＋ New group</button></div>
+    ${filters}${fsum}
     <div class="cols">
       <section class="card ${who === 'a' || who === 'b' ? 'pcol' : 'c-honey'} span"${who === 'a' || who === 'b' ? ` style="--pc:${esc(person(who).color)}"` : ''}><span class="tape" aria-hidden="true"></span>
         <div class="card-head"><h3>${who === 'a' || who === 'b' ? `${esc(nameOf(who))}’s ${esc(perWord)}` : who === 'j' ? `Shared, each ${esc(perWord)}` : `Each ${esc(perWord)}`}</h3></div>
@@ -72,9 +100,14 @@ export function renderBudget(view, ctx) {
       ${!items.length ? `<div class="empty span">${all.length ? 'Nothing here yet.' : 'No bills yet. Start a group (like <b>Subscriptions</b>) with <b>＋ New group</b>.'}</div>` : ''}
     </div>`;
 
+  view.onchange = e => {
+    if (e.target.matches('[data-ffrom]')) { setPref('budgetFrom', e.target.value); ctx.render(true); }
+    if (e.target.matches('[data-fto]')) { setPref('budgetTo', e.target.value); ctx.render(true); }
+  };
   view.onclick = e => {
     const b = e.target.closest('button');
     if (!b) return;
+    if (b.hasAttribute('data-clearf')) { setPref('budgetFrom', ''); setPref('budgetTo', ''); return ctx.render(true); }
     if (b.dataset.who) { setPref('budgetWho', b.dataset.who); return ctx.render(); }
     if (b.dataset.per) { setPref('budgetPer', b.dataset.per); return ctx.render(true); }
     if (b.dataset.income) return editIncome(b.dataset.income, ctx);
@@ -92,7 +125,7 @@ function itemRow(i, per, who = 'all') {
   const meta = [
     i.who === 'j' ? ownerTag('j', even ? 'half each' : 'shared') : who === 'all' ? ownerTag(i.who) : '',
     i.freq !== per ? `<span>${money(i.amt)} a ${esc(M.FREQ_LABEL[i.freq])}</span>` : '',
-    i.acct ? `<span>· ${esc(i.acct)}</span>` : '',
+    i.acct || i.to ? `<span>· ${i.acct ? esc(i.acct) : 'from ?'}${i.to ? ` → ${esc(i.to)}` : ''}</span>` : '',
     i.track ? `<span class="tag c-honey">tracked in Owings</span>` : '',
   ].filter(Boolean).join('');
   const amount = mine ? M.fromYear(sh[who], per) : M.fromYear(y, per);
@@ -120,7 +153,7 @@ function editIncome(slot, ctx) {
 function editItem(item, groupId, ctx, whoNew = 'j') {
   const isNew = !item;
   const cur = item ? { ...item } : { id: uid(), name: '', amt: null, freq: 'm', who: whoNew, group: groupId || '', order: Date.now() / 1e13 };
-  const accounts = [...new Set(M.budgetItems().map(i => i.acct).filter(Boolean))];
+  const accounts = [...new Set(M.budgetItems().flatMap(i => [i.acct, i.to]).filter(Boolean))].sort();
   const custom = cur.who === 'j' && cur.split != null && Math.abs(cur.split - 0.5) > 0.004;
   const shareA = cur.amt ? r2(cur.amt * (cur.split ?? 0.5)) : '';
   const el = openSheet(`<h3>${isNew ? 'A new bill or cost' : esc(cur.name)}</h3>
@@ -134,6 +167,7 @@ function editItem(item, groupId, ctx, whoNew = 'j') {
         <label class="field"><span>${esc(nameOf('b'))} pays</span><input class="inp money" id="bi-b" inputmode="decimal" value="${cur.amt ? esc(String(r2(cur.amt - shareA))) : ''}"></label></div></div>
     <label class="field"><span>Group</span><select class="inp" id="bi-group"><option value="">Other</option>${M.budgetGroups().map(g => `<option value="${g.id}" ${g.id === cur.group ? 'selected' : ''}>${esc(g.emoji || '')} ${esc(g.name)}</option>`).join('')}</select></label>
     <label class="field"><span>Paid from (optional)</span><input class="inp" id="bi-acct" list="bi-accts" value="${esc(cur.acct || '')}" placeholder="e.g. 2Up, CommBank" autocomplete="off"><datalist id="bi-accts">${accounts.map(a => `<option value="${esc(a)}">`).join('')}</datalist></label>
+    <label class="field"><span>Paid to (optional)</span><input class="inp" id="bi-to" list="bi-accts" value="${esc(cur.to || '')}" placeholder="e.g. CommBank, or who it goes to" autocomplete="off"><span class="hint">For money that moves between accounts (2Up → CommBank), or who gets paid.</span></label>
     <label class="field"><span>Keep track of the spending in Owings</span><select class="inp" id="bi-track"><option value="">No, it’s a set bill</option>${M.cats().map(c => `<option value="${esc(c.id)}" ${c.id === cur.track ? 'selected' : ''}>Yes: purchases marked ${esc(c.emoji)} ${esc(c.name)}</option>`).join('')}</select>
       <span class="hint">For a spending budget like groceries: Owings shows how much of it is left each month.</span></label>
     <label class="field"><span>Note (optional)</span><input class="inp" id="bi-note" value="${esc(cur.note || '')}" autocomplete="off"></label>
@@ -163,7 +197,7 @@ function editItem(item, groupId, ctx, whoNew = 'j') {
     const who = el.querySelector('#bi-who [aria-pressed="true"]').dataset.who;
     const out = {
       name: $('#bi-name').value.trim() || 'Untitled', amt: parseMoney($('#bi-amt').value) || 0, freq: $('#bi-freq').value, who,
-      group: $('#bi-group').value, acct: $('#bi-acct').value.trim() || undefined, track: $('#bi-track').value || undefined,
+      group: $('#bi-group').value, acct: $('#bi-acct').value.trim() || undefined, to: $('#bi-to').value.trim() || undefined, track: $('#bi-track').value || undefined,
       note: $('#bi-note').value.trim() || undefined, order: cur.order ?? Date.now() / 1e13,
     };
     if (who === 'j' && el.querySelector('#bi-split [aria-pressed="true"]').dataset.split === 'custom') {

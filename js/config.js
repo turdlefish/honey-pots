@@ -19,7 +19,7 @@ try { mockFlag = localStorage.getItem('pots:mock') === '1'; } catch (e) {}
 
 export const APP = 'Honey Pots';
 // This app's version (shown on Us; the Android app's versionName will match it).
-export const VERSION = '1.1';
+export const VERSION = '1.2';
 
 export const CONFIG = {
   supabaseUrl: 'https://njywijcqspkwebfqesjx.supabase.co',

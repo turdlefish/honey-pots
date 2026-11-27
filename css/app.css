@@ -520,3 +520,7 @@ button.card.featured { text-align: left; font: inherit; color: inherit; cursor: 
 .mchip.now { border-color: var(--honey); }
 .mrowlabel { margin: 2px 0 -4px; }
 .potacts { margin-top: 2px; }
+/* budget filters */
+.filters { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.filters .inp { padding: 7px 10px; font-size: 14.5px; }
+.sumline .linkbtn { margin-left: auto; }
