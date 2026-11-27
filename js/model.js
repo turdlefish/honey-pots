@@ -107,14 +107,33 @@ export function deleteUse(y, id) { store.setField(Y(y), 'w:' + id, null); }
 export const usesOf = (potId, y) => [...manualUses(potId, y), ...owingUsesOf(potId).filter(u => u.py === y)]
   .sort((x, z) => String(z.date || z.ym).localeCompare(String(x.date || x.ym)));
 
-/** Saved / planned / used per person in one year's doc. */
+/**
+ * Money put in by hand, outside the monthly plan (a past deposit, a lump sum), by either of you:
+ * y<YYYY> d:<id> → { pot, ym, a?, b?, note }. It counts as saved, but not in a month's savings check.
+ */
+export function manualDeposits(potId, y) {
+  return Object.entries(vals(Y(y))).filter(([k, d]) => k.startsWith('d:') && d && d.pot === potId)
+    .map(([k, d]) => ({ ...d, id: k.slice(2), py: y, kind: 'deposit' }))
+    .sort((x, z) => String(z.ym).localeCompare(String(x.ym)));
+}
+export function saveDeposit(y, dep) { const { id, py, kind, ...rest } = dep; store.setField(Y(y), 'd:' + id, rest); }
+export function deleteDeposit(y, id) { store.setField(Y(y), 'd:' + id, null); }
+/** Deposits by hand for one person in one calendar month, across every pot (for the year's bars). */
+export function depositsInMonth(slot, ym) {
+  let t = 0;
+  for (const y of dataYears()) for (const [k, d] of Object.entries(vals(Y(y)))) if (k.startsWith('d:') && d && d.ym === ym) t += +d[slot] || 0;
+  return r2(t);
+}
+
+/** Saved / planned / used per person in one year's doc. saved includes money put in by hand (added). */
 function flows(pot, y) {
   return memo(`flows:${pot.id}:${y}`, () => {
-    const cells = cellsOf(pot.id, y), uses = usesOf(pot.id, y), out = {};
+    const cells = cellsOf(pot.id, y), uses = usesOf(pot.id, y), deps = manualDeposits(pot.id, y), out = {};
     for (const s of slotsOf(pot)) {
       let plan = 0, saved = 0, months = 0, done = 0;
       for (const c of Object.values(cells[s] || {})) { plan += cellPlan(c); saved += cellSaved(c); if (cellPlan(c) || c.amt) { months++; if (c.done) done++; } }
-      out[s] = { plan: r2(plan), saved: r2(saved), used: r2(uses.reduce((t, u) => t + (u[s] || 0), 0)), months, done };
+      const added = r2(deps.reduce((t, d) => t + (+d[s] || 0), 0));
+      out[s] = { plan: r2(plan), saved: r2(saved + added), added, used: r2(uses.reduce((t, u) => t + (u[s] || 0), 0)), months, done };
     }
     return out;
   });
@@ -143,7 +162,7 @@ export function potStats(pot, y) {
       const p = {
         ...x, target, carry: r2(carry), have, balance: r2(have - x.used),
         left: target != null ? r2(Math.max(0, target - have)) : 0,
-        unplanned: target != null ? r2(Math.max(0, target - carry - x.plan)) : 0,
+        unplanned: target != null ? r2(Math.max(0, target - carry - x.plan - (x.added || 0))) : 0,
       };
       per[s] = p;
       for (const k of ['carry', 'plan', 'saved', 'used', 'have', 'balance', 'left', 'unplanned']) tot[k] = r2(tot[k] + p[k]);
@@ -180,11 +199,11 @@ export function potYearFor(pot, date) {
   const before = ys.filter(v => v < y), after = ys.filter(v => v > y);
   return before.length ? before[before.length - 1] : after.length ? after[0] : y;
 }
-/** How a joint pot's money splits between you: Adri's share, 0…1 (by your targets, else half each). */
+/** How a joint pot's money splits between you: Adri's share, 0…1 (by your targets when you both have one, else half each). */
 export function jointShare(pot, y) {
   const t = pot.type === 'year' ? potYear(pot.id, y)?.target : pot.goal;
   const a = +(t?.a || 0), b = +(t?.b || 0);
-  return a + b > 0 ? a / (a + b) : 0.5;
+  return a > 0 && b > 0 ? a / (a + b) : 0.5;   // half each unless you both have a target
 }
 
 // ── Each month's money into pots ─────────────────────────────────────────
@@ -494,17 +513,33 @@ export function accountStats(acc, ym) {
 /** Interest from every account in a year. */
 export const interestInYear = y => r2(Object.entries(vals('accounts')).filter(([k]) => k.startsWith('m:') && k.split(':')[2].startsWith(y + '-')).reduce((t, [, v]) => t + (+v.interest || 0), 0));
 
-// ── When a yearly pot's money is needed ──────────────────────────────────
-// py.due = [{ id, ym, amt, note? }]: e.g. car insurance, $2,600 by March. The check adds up the
-// money planned (or already in) up to and including that month, against everything due by then.
-export const duesOf = (pot, y) => (pot.type === 'year' ? [...(potYear(pot.id, y)?.due || [])] : []).sort((a, b) => a.ym.localeCompare(b.ym));
-export function setDues(pot, y, due) { setPotYear(pot.id, y, { ...(potYear(pot.id, y) || { target: {} }), due: due.length ? due : undefined }); }
+// ── When a pot's money is needed (save it by a date) ─────────────────────
+// A yearly pot's dates are that year's: py.due = [{ id, ym, amt, note? }] (car insurance, $2,600 by March).
+// A goal's are on the goal itself: pot.due = [...] (the deposit, $60,000 by December 2027).
+// The check adds up the money in (or planned) up to and including that month, against
+// everything due by then. Money put in by hand counts too.
+export const duesOf = (pot, y) => [...((pot.type === 'year' ? potYear(pot.id, y)?.due : pot.due) || [])].sort((a, b) => a.ym.localeCompare(b.ym));
+export function setDues(pot, y, due) {
+  if (pot.type === 'year') setPotYear(pot.id, y, { ...(potYear(pot.id, y) || { target: {} }), due: due.length ? due : undefined });
+  else savePot({ ...pot, due: due.length ? due : undefined });
+}
 /** Each person's share of something due on a shared pot (by your targets, else half each). */
 const shareOf = (pot, y, s) => (pot.owner !== 'j' ? 1 : s === 'a' ? jointShare(pot, y) : 1 - jointShare(pot, y));
-/** Money in (or planned) for a pot-year by the end of a month: brought over, plus every month up to it. */
+/** Every month's money for one person in a pot: a yearly pot's own year, or all of a goal's years: { ym: cell }. */
+function cellsAll(pot, y, s) {
+  if (pot.type === 'year') return cellsOf(pot.id, y)[s] || {};
+  const out = {};
+  for (const yr of yearsOfPot(pot)) Object.assign(out, cellsOf(pot.id, yr)[s] || {});
+  return out;
+}
+const depositsAll = (pot, y) => (pot.type === 'year' ? manualDeposits(pot.id, y) : yearsOfPot(pot).flatMap(yr => manualDeposits(pot.id, yr)));
+/** What was there before the months: a yearly pot's brought-over money; a goal's starting money and own-account money. */
+const startOf = (pot, y, s) => (pot.type === 'year' ? potYear(pot.id, y)?.carry?.[s] || 0 : (pot.start?.[s] || 0) + extrasOf(pot, s));
+/** Money in (or planned) by the end of a month. */
 export function moneyBy(pot, y, s, ym) {
-  let t = potYear(pot.id, y)?.carry?.[s] || 0;
-  for (const [m, c] of Object.entries(cellsOf(pot.id, y)[s] || {})) if (m <= ym) t += c.done ? cellSaved(c) : cellPlan(c);
+  let t = startOf(pot, y, s);
+  for (const [m, c] of Object.entries(cellsAll(pot, y, s))) if (m <= ym) t += c.done ? cellSaved(c) : cellPlan(c);
+  for (const d of depositsAll(pot, y)) if (d.ym <= ym) t += +d[s] || 0;
   return r2(t);
 }
 /** [{ due, cum, need: {a,b}, have: {a,b}, short: {a,b}, shortTot, ok }] for each date, in order. */
@@ -525,21 +560,26 @@ export function dueCheck(pot, y) {
     });
   });
 }
-/** The first date a pot-year won't have enough by, or null. */
+/** The first date a pot won't have enough by, or null. */
 export const firstShort = (pot, y) => dueCheck(pot, y).find(c => !c.ok) || null;
 
 /**
- * Re-plans the months still to come so each date has enough, then spreads the rest of the
- * target after the last date. Months already ticked done stay as they are. Returns the dates
- * it couldn't make (their month has already gone by).
+ * Re-plans the months still to come so each date has enough. A yearly pot then spreads the
+ * rest of its target after the last date; a goal leaves the months after it as they are.
+ * Months already ticked done stay as they are. Returns the dates it couldn't make.
  */
 export function replanForDues(pot, y) {
-  const dues = duesOf(pot, y), from = nowYM(), last = ymOf(y, 12), failed = [];
-  const st = potStats(pot, y), fields = {};
+  const dues = duesOf(pot, y), from = nowYM(), failed = [];
+  if (!dues.length) return failed;
+  const last = pot.type === 'year' ? ymOf(y, 12) : dues[dues.length - 1].ym;
+  const st = pot.type === 'year' ? potStats(pot, y) : null, byDoc = {};
+  const docOf = m => (pot.type === 'year' ? y : yearOfYM(m));
   for (const s of slotsOf(pot)) {
-    const cells = cellsOf(pot.id, y)[s] || {}, carry = potYear(pot.id, y)?.carry?.[s] || 0, share = shareOf(pot, y, s);
-    // Money that's settled: brought over, months ticked done, and months already gone by.
-    const fixedBy = ym => carry + Object.entries(cells).filter(([m, c]) => m <= ym && (c.done || m < from)).reduce((t, [, c]) => t + (c.done ? cellSaved(c) : cellPlan(c)), 0);
+    const cells = cellsAll(pot, y, s), share = shareOf(pot, y, s), deps = depositsAll(pot, y);
+    // Money that's settled: what was there before, months ticked done, months gone by, and money put in by hand.
+    const fixedBy = ym => startOf(pot, y, s)
+      + Object.entries(cells).filter(([m, c]) => m <= ym && (c.done || m < from)).reduce((t, [, c]) => t + (c.done ? cellSaved(c) : cellPlan(c)), 0)
+      + deps.filter(d => d.ym <= ym).reduce((t, d) => t + (+d[s] || 0), 0);
     const open = monthsBetween(from, last).filter(m => !cells[m]?.done);
     const plan = {};
     let planned = 0, cum = 0, prev = null;
@@ -555,16 +595,18 @@ export function replanForDues(pot, y) {
       if (seg.length) { spread(seg, need); planned += need; } else if (need > 0.5 && !failed.includes(d)) failed.push(d);
       prev = d.ym;
     }
-    const target = st.per[s].target ?? r2(cum);
-    const after = open.filter(m => prev == null || m > prev);
-    const rest = Math.max(0, r2(target - fixedBy(last) - planned));
-    if (after.length) spread(after, rest);
+    if (pot.type === 'year') {
+      const target = st.per[s].target ?? r2(cum);
+      const after = open.filter(m => prev == null || m > prev);
+      const rest = Math.max(0, r2(target - fixedBy(last) - planned));
+      if (after.length) spread(after, rest);
+    }
     for (const m of open) {
-      const cur = cells[m] || {};
-      fields[cellKey(pot.id, s, m)] = plan[m] ? { ...cur, plan: plan[m] } : (cur.done ? cur : null);
+      const cur = cells[m] || {}, doc = docOf(m);
+      (byDoc[doc] = byDoc[doc] || {})[cellKey(pot.id, s, m)] = plan[m] ? { ...cur, plan: plan[m] } : (cur.done ? cur : null);
     }
   }
-  setYearFields(y, fields);
+  Object.entries(byDoc).forEach(([doc, fields]) => setYearFields(+doc, fields));
   return failed;
 }
 

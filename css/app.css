@@ -518,3 +518,5 @@ button.card.featured { text-align: left; font: inherit; color: inherit; cursor: 
 .mchip.done b::after { content: ' ✓'; color: var(--mint-ink); font-size: 11px; }
 .mchip.over b { color: var(--red); }
 .mchip.now { border-color: var(--honey); }
+.mrowlabel { margin: 2px 0 -4px; }
+.potacts { margin-top: 2px; }

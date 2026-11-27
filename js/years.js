@@ -23,7 +23,7 @@ export function renderYears(view, ctx) {
 
   // What went in each calendar month, per person (money for next year's pots counts in the month it went in).
   const months = M.monthsOf(y), slots = bothSlots();
-  const perMonth = months.map(m => Object.fromEntries(slots.map(s => [s, r2(M.monthLines(s, m).reduce((t, l) => t + M.cellSaved(l.cell), 0))])));
+  const perMonth = months.map(m => Object.fromEntries(slots.map(s => [s, r2(M.monthLines(s, m).reduce((t, l) => t + M.cellSaved(l.cell), 0) + M.depositsInMonth(s, m))])));
   const inYear = Object.fromEntries(slots.map(s => [s, r2(perMonth.reduce((t, x) => t + x[s], 0))]));
   const max = Math.max(1, ...perMonth.map(x => slots.reduce((t, s) => t + x[s], 0)));
   const used = r2(pots.reduce((t, p) => t + M.potStats(p, y).tot.used, 0));
