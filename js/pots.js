@@ -393,12 +393,18 @@ function allView(who = 'all') {
       <div class="s">${t.target ? `${money0(t.have)} of ${money0(t.target)}${t.reached ? ' · reached' : ''}` : `${money0(t.balance)} in it`}</div>
       <div class="tags"><span class="tag ${p.type === 'year' ? 'plain' : 'c-mint'}">${esc(p.type === 'year' ? yearTag(p, py) : 'Goal')}</span>${later ? `<span class="tag c-lav">${py + 1} started</span>` : ''}${shortTag(p, py)}</div></div></button>`;
   };
-  // Does what's filled in work? Each month against the savings amount, and money needed by a date.
-  const checks = bothSlots().map(s => {
-    const bad = M.yearMonthCheck(s, y).filter(r => !r.ok);
-    return bad.length ? `<button class="sumline short" data-edityear="${y}">⚠️ ${esc(nameOf(s))}: ${bad.length === 12 ? `none of ${y}’s months add up yet` : `${bad.length === 1 ? '1 month' : `${bad.length} months`} of ${y} ${bad.length === 1 ? 'doesn’t' : 'don’t'} add up (${bad.map(r => monShort(r.ym)).join(', ')})`} ›</button>`
-      : `<div class="sumline ok">✓ ${esc(nameOf(s))}: every month of ${y} adds up</div>`;
-  }).join('') + yearly.map(p => ({ p, c: M.firstShort(p, y) })).filter(x => x.c).map(({ p, c }) =>
+  // How the year's goals stand: how many the months ticked done have reached, how many to go, and the
+  // pots whose months planned don't add up to their goal. Then money needed by a date.
+  const shownPots = [...groups.flatMap(o => yearly.filter(p => p.owner === o).map(p => [p, y])), ...goals.map(p => [p, Math.min(y, now)])];
+  const withGoal = shownPots.map(([p, py]) => ({ p, t: M.potStats(p, py).tot })).filter(x => x.t.target);
+  const reachedN = withGoal.filter(x => x.t.reached).length, toGo = withGoal.length - reachedN;
+  const notAdding = withGoal.filter(x => !x.t.reached && !x.t.planOK);
+  const pl = (n, one, many) => (n === 1 ? one : many);
+  const tally = !withGoal.length ? ''
+    : !reachedN ? `<div class="sumline ok">🌱 ${toGo} ${pl(toGo, 'pot’s goal', 'pots’ goals')} to go! Tick the months as the money goes in.</div>`
+      : `<div class="sumline ok">🎉 ${toGo ? '' : 'All '}${reachedN} ${pl(reachedN, 'pot’s goal', 'pots’ goals')} reached!${toGo ? ` ${toGo} more to go!` : ''}</div>`;
+  const adds = notAdding.length ? `<button class="sumline short" data-plangrid="${who}" data-py="${y}">⚠️ ${notAdding.length} ${pl(notAdding.length, 'pot doesn’t', 'pots don’t')} add up: the months planned are short of the goal (${notAdding.slice(0, 3).map(x => esc(x.p.name)).join(', ')}${notAdding.length > 3 ? ` and ${notAdding.length - 3} more` : ''}) ›</button>` : '';
+  const checks = tally + adds + yearly.map(p => ({ p, c: M.firstShort(p, y) })).filter(x => x.c).map(({ p, c }) =>
     `<button class="sumline over" data-pot="${p.id}" data-year="${y}">⚠️ ${esc(p.name)}: ${money(c.shortTot)} short of what’s needed by ${esc(ymLabel(c.due.ym))} ›</button>`).join('')
     // A year that's over with money still in its pots: move it on into the next year.
     + (y < now ? leftLine(y, p => who === 'all' || p.owner === who) : '');
@@ -1140,7 +1146,7 @@ export function renderMonthPlan(view, ctx, arg) {
         : `<span>${money0(g1.left)} to go</span>${g1.planOK ? '' : `<span class="warn">⚠️ short ${money0(g1.short)}</span>`}`;
       return `<div class="mrowlabel${g1.reached ? ' in' : ''}">${ownerTag(s, nameOf(s) + (g1.planOK ? ' ✅' : ''))}${bit}</div>${chipRow(pot, year, s)}`;
     };
-    return `<section class="card flat mplan${g.reached ? ' reached' : ''}${fold ? ' folded' : ''}"><div class="mp-head">${jarOf(pot, year, 30)}
+    return `<section class="card flat mplan${g.reached ? ' reached' : ''}${fold ? ' folded' : ''}"><div class="mp-head">${jarOf(pot, year, 38)}
         <div class="grow"><button class="nmbtn" data-pot="${pot.id}" data-year="${year}">${esc(pot.name)}${g.planOK ? ' ✅' : ''}</button>
           <div class="meta">${tags}${standing(g, pot)}${g.reached ? '' : shortTag(pot, year)}</div></div>
         ${fold ? '' : `<button class="btn sm ghost" data-spreadpot="${key}">Spread</button>`}
@@ -1153,6 +1159,22 @@ export function renderMonthPlan(view, ctx, arg) {
   const bad = checks.filter(r => !r.ok).length, allIn = checks.filter(r => r.allIn).length;
   const gc = ({ pot, year }) => M.goalCheck(pot, year, M.slotsOf(pot).filter(s => slots.includes(s)));
   const planN = list.filter(x => gc(x).planOK).length, reachedN = list.filter(x => gc(x).reached).length;
+  // The pots in sections, each a card holding its pots' cards: each of you, the shared ones, and the ones
+  // kept apart. A section folds away too (remembered on this phone).
+  const secOf = p => (p.separate ? 'apart' : p.owner), secFold = prefSet('mpSecFold');
+  const section = k => {
+    const items = list.filter(x => secOf(x.pot) === k);
+    if (!items.length) return '';
+    const gs = items.map(gc), withGoal = gs.filter(g => g.target != null).length, fold = secFold.has(k);
+    const title = k === 'apart' ? 'Kept apart' : k === 'j' ? 'Shared pots' : `${ownerPossessive(k)} pots`;
+    const cls = k === 'apart' ? 'c-honey' : k === 'j' ? 'c-mint' : 'pcol', style = k === 'a' || k === 'b' ? ` style="--pc:${esc(ownerColor(k))}"` : '';
+    return `<section class="card mpsec ${cls}${fold ? ' folded' : ''}"${style}>
+      <button class="card-head foldhead" data-secfold="${k}" aria-expanded="${!fold}"><h3>${esc(title)}</h3>
+        <span class="sub">${items.length} pot${items.length === 1 ? '' : 's'}${withGoal ? ` · ${gs.filter(g => g.planOK).length} ✅ · ${gs.filter(g => g.reached).length} reached` : ''}</span>
+        <span class="iconbtn fold" aria-hidden="true">${fold ? '▸' : '▾'}</span></button>
+      ${fold ? '' : `<div class="mpsec-list">${items.map(potCard).join('')}</div>`}</section>`;
+  };
+  const sections = (shared ? ['j', 'apart'] : [...slots, 'j', 'apart']).map(section).join('');
   const solo = who === 'a' || who === 'b', anyOpen = list.some(({ pot, year }) => !folded.has(`${pot.id}|${year}`));
   view.innerHTML = `${whoSeg(who, 'who', 'Whose plan')}
     <div class="stepper"><button class="iconbtn" data-yy="${prev ?? ''}" ${prev == null ? 'disabled' : ''} aria-label="Year before">‹</button>
@@ -1166,7 +1188,7 @@ export function renderMonthPlan(view, ctx, arg) {
       <div class="mtiles">${tiles}</div></section>
     <div class="toprow"><p class="hint grow">Tap any month of a pot to change it (or the rest of the year with it). <b>✅</b> by a pot: the months planned reach its goal. <b>Green</b>: the months ticked done have reached it.</p>
       ${list.length ? `<button class="linkbtn" data-foldall="${anyOpen ? '1' : '0'}">${anyOpen ? '▸ Fold them all' : '▾ Open them all'}</button>` : ''}</div>
-    ${list.length ? list.map(potCard).join('') : `<div class="empty">No ${shared ? 'shared ' : ''}pots in ${y} yet.</div>`}`;
+    ${list.length ? sections : `<div class="empty">No ${shared ? 'shared ' : ''}pots in ${y} yet.</div>`}`;
 
   view.onclick = e => {
     const b = e.target.closest('button');
@@ -1174,6 +1196,7 @@ export function renderMonthPlan(view, ctx, arg) {
     if (b.dataset.who) return ctx.go(`months-${b.dataset.who}-${y}`);
     if (b.dataset.yy) return ctx.go(`months-${who}-${b.dataset.yy}`);
     if (b.dataset.fold) { togglePrefSet('mpFold', b.dataset.fold); return ctx.render(true); }
+    if (b.dataset.secfold) { togglePrefSet('mpSecFold', b.dataset.secfold); return ctx.render(true); }
     if (b.dataset.foldall) {
       const keys = new Set(prefSet('mpFold'));
       list.forEach(({ pot, year }) => { const k = `${pot.id}|${year}`; if (b.dataset.foldall === '1') keys.add(k); else keys.delete(k); });

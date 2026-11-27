@@ -7,7 +7,7 @@
 
 import * as store from './store.js';
 import * as M from './model.js';
-import { person } from './people.js';
+import { person, setPref } from './people.js';
 import { esc, toast, openSheet, closeSheet } from './ui.js';
 
 let seedP = null;
@@ -129,7 +129,8 @@ export async function importXBudgets(ctx) {
     const iAm = el.querySelector('#ix-who [aria-pressed="true"]').dataset.who;
     const n = writeXBudgets(iAm === store.me() ? seed.xbudgets : swapX(seed.xbudgets));
     closeSheet();
-    toast(n ? `Brought in ${n} things: Budget → 🍩 ${names}` : 'It’s all here already');
+    toast(n ? `Brought in ${n} things: Budget → 🍩 Pie chart budget` : 'It’s all here already');
+    setPref('budgetBook', 'pie');
     ctx.go('budget');
   };
 }

@@ -123,3 +123,51 @@ export function confirmSheet({ title, text = '', yes = 'Yes', no = 'Cancel', dan
     };
   });
 }
+
+// ── Emoji a little bigger than the words around them (they read small, on Android especially) ──
+// Every colour emoji in the page gets a <span class="ej"> (app.css sizes it), also in anything drawn
+// later: a watcher wraps new text as it appears. Plain symbols (✎ ✓ ›) stay as they are, and so do
+// form fields, drop-down lists and pictures (the jar draws its own, bigger).
+const EMO = /\p{Regional_Indicator}{2}|(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}\uFE0F)(?:\uFE0F|[\u{1F3FB}-\u{1F3FF}]|\u200D(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}\uFE0F?))*/gu;
+const NO_EMO = 'svg, textarea, select, option, script, style, title, .ej, [data-noemo]';
+function wrapEmoji(root) {
+  if (!root || (root.nodeType !== 1 && root.nodeType !== 11)) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), found = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const p = n.parentElement;
+    if (!p || p.closest(NO_EMO)) continue;
+    EMO.lastIndex = 0;
+    // In a flex or grid row the text was one piece; it stays one (a span round it) so nothing moves.
+    if (EMO.test(n.nodeValue)) found.push([n, p.isConnected && /flex|grid/.test(getComputedStyle(p).display)]);
+  }
+  for (const [n, whole] of found) {
+    const s = n.nodeValue, frag = document.createDocumentFragment();
+    let last = 0, m;
+    EMO.lastIndex = 0;
+    while ((m = EMO.exec(s))) {
+      if (m.index > last) frag.append(s.slice(last, m.index));
+      const sp = document.createElement('span');
+      sp.className = 'ej'; sp.textContent = m[0];
+      frag.append(sp);
+      last = m.index + m[0].length;
+    }
+    if (last < s.length) frag.append(s.slice(last));
+    if (whole) { const box = document.createElement('span'); box.className = 'ejt'; box.append(frag); n.replaceWith(box); }
+    else n.replaceWith(frag);
+  }
+}
+let emojiOn = false;
+export function bigEmoji() {
+  if (emojiOn || typeof MutationObserver === 'undefined') return;
+  emojiOn = true;
+  wrapEmoji(document.body);
+  new MutationObserver(list => {
+    for (const m of list) {
+      if (m.type === 'characterData') { if (m.target.parentElement) wrapEmoji(m.target.parentElement); continue; }
+      for (const n of m.addedNodes) {
+        if (n.nodeType === 1) wrapEmoji(n);
+        else if (n.nodeType === 3 && n.parentElement) wrapEmoji(n.parentElement);
+      }
+    }
+  }).observe(document.body, { childList: true, subtree: true, characterData: true });
+}

@@ -15,6 +15,8 @@ export function jar({ full = 0, spent = 0, size = 46, emoji = '', lid = '#FFE19A
   const yFull = BOTTOM - (BOTTOM - TOP) * full, yGold = BOTTOM - (BOTTOM - TOP) * (full - spent);
   const wave = y => `M8 ${y} q5.5 3 11 0 t11 0 t11 0 t11 0 t11 0`;
   const h = Math.round(size), w = Math.round(size * 60 / 72);
+  // The label's emoji, as big as the jar allows (a small jar gets a bigger label so it still reads).
+  const lr = size < 44 ? 16 : 14, fs = size < 44 ? 23 : 20;
   return `<svg class="jar${reached ? ' reached' : ''}" viewBox="0 0 60 72" width="${w}" height="${h}" aria-hidden="true">
     <defs><clipPath id="${id}"><path d="${BODY}"/></clipPath></defs>
     <path class="glass" d="${BODY}"/>
@@ -26,7 +28,7 @@ export function jar({ full = 0, spent = 0, size = 46, emoji = '', lid = '#FFE19A
     <path class="rim" d="${BODY}"/>
     <rect x="15" y="7" width="30" height="10" rx="4" class="lid" style="--lidc:${esc(lid)}"/>
     <path d="M18 28v12" class="shine"/>
-    ${emoji ? `<circle cx="30" cy="47" r="10" class="lbl"/><text x="30" y="48" class="emo">${esc(emoji)}</text>` : ''}
+    ${emoji ? `<circle cx="30" cy="46" r="${lr}" class="lbl"/><text x="30" y="47.5" class="emo" style="font-size:${fs}px">${esc(emoji)}</text>` : ''}
     ${reached ? '<path d="M50 9l1.4 3.2 3.2 1.4-3.2 1.4L50 18.2l-1.4-3.2-3.2-1.4 3.2-1.4z" fill="#FFC23D"/>' : ''}
   </svg>`;
 }

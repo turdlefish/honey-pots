@@ -5,7 +5,7 @@ import * as store from './store.js';
 import * as M from './model.js';
 import { nameOf, ownerColor, ownerTag, bothSlots, pref, setPref, person, whoSeg as whoSwitch, whoPref } from './people.js';
 import { esc, money, money0, r2, uid, toast, openSheet, closeSheet, confirmSheet, parseMoney } from './ui.js';
-import { xbudgets, xbudget, renderXBudget, editXBudget } from './xbudget.js';
+import { xbudget, renderPie, editXBudget } from './xbudget.js';
 
 const PERIODS = [['w', 'Week'], ['f', 'Fortnight'], ['m', 'Month'], ['y', 'Year']];
 const GROUP_EMOJI = ['📺', '🏠', '⚡', '🛒', '📱', '🩺', '🚗', '🐾', '💞', '📈', '🏦', '🎓', '🎵', '🧾', '✨', '🍜'];
@@ -15,11 +15,14 @@ const inPeriod = (yearly, per) => M.fromYear(yearly, per);
 // shared ones), or just the shared ones.
 export function renderBudget(view, ctx) {
   ctx.topbar.set('Budget');
-  // The basic budget (the two of you), or one of the separate ones (one person's own budget sheet): a switch at the top.
-  const book = pref('budgetBook', ''), books = xbudgets();
-  const bookSeg = `<div class="toprow"><div class="seg bookseg" role="group" aria-label="Which budget"><button data-book="" aria-pressed="${!book || !xbudget(book)}">🧾 Basic budget</button>${books.map(b => `<button data-book="${esc(b.id)}" aria-pressed="${b.id === book}">🍩 ${esc(b.name)}</button>`).join('')}</div>
-    <button class="btn sm ghost" data-newbook>＋ Separate budget</button></div>`;
-  if (book && xbudget(book)) return renderXBudget(view, ctx, book, bookSeg);
+  // The basic budget (the two of you), or the pie chart budget (each of you, shared costs, doughnuts): a switch at the top.
+  // '' = basic, 'pie' = pie (before 1.5 a phone kept one pie budget's id here).
+  const book = pref('budgetBook', ''), pie = book === 'pie' || !!xbudget(book);
+  const bookSeg = `<div class="toprow"><div class="seg bookseg" role="group" aria-label="Which budget"><button data-book="" aria-pressed="${!pie}">🧾 Basic budget</button><button data-book="pie" aria-pressed="${pie}">🍩 Pie chart budget</button></div></div>`;
+  if (pie) {
+    if (book !== 'pie') { const old = xbudget(book); setPref('budgetBook', 'pie'); if (old && old.owner !== 'j' && pref('pieWho', null) == null) setPref('pieWho', old.owner); }
+    return renderPie(view, ctx, bookSeg);
+  }
   const per = pref('budgetPer', 'm'), perWord = M.FREQ_LABEL[per];
   const who = whoPref('budgetWho');
   const groups = M.budgetGroups(), all = M.budgetItems(), tot = M.budgetTotals();

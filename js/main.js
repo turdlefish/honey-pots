@@ -11,7 +11,7 @@ import { renderOwings } from './owings.js';
 import { renderBudget } from './budget.js';
 import { renderYears, renderPlanner } from './years.js';
 import { renderUs } from './us.js';
-import { esc, closeSheet, sheetOpen } from './ui.js';
+import { esc, closeSheet, sheetOpen, bigEmoji } from './ui.js';
 
 const view = document.getElementById('view');
 const topbarEl = document.getElementById('topbar');
@@ -119,5 +119,6 @@ function start() {
   store.startSync().then(() => render(true));
 }
 
+bigEmoji();
 if (store.getSession()) start();
 else runOnboarding(start);

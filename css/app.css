@@ -630,3 +630,26 @@ button.sumline { border: 0; text-align: left; font: inherit; font-size: 13.5px; 
 /* a card whose heading folds it away (Us → Owings) */
 button.foldhead { border: 0; background: none; padding: 0; width: 100%; font: inherit; color: inherit; text-align: left; cursor: pointer; }
 button.foldhead .iconbtn.fold { box-shadow: none; background: var(--surface-2); }
+/* 1.5: the pie chart budget's summary (each person's pay, who pays what of the shared costs) */
+.xsum .r.sub { font-size: 12.5px; color: var(--ink-soft); font-weight: 700; }
+/* 1.5: emoji a little bigger than the words around them (ui.js wraps each colour emoji in .ej) */
+.ej { font-size: 1.25em; line-height: 1; vertical-align: -0.08em; }
+.jar .emo { font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+/* 1.5: Plan by month in sections (each of you, shared, kept apart): a card holding its pots' cards */
+.mpsec { background: color-mix(in srgb, var(--c-bg) 55%, var(--paper)); border-color: var(--c-mid); gap: 10px; padding: 14px 12px 12px; }
+.mpsec.folded { padding-top: 12px; padding-bottom: 12px; }
+.mpsec > .foldhead h3 { color: var(--c-ink); }
+.mpsec-list { display: flex; flex-direction: column; gap: 10px; }
+.mpsec .mplan { background: var(--surface); }
+.mpsec .mplan.reached { background: color-mix(in srgb, var(--mint-bg) 80%, var(--surface)); }
+/* 1.5: a year's pots page: copy last year's as a tick list, each pot a row to tap */
+.steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 3px; color: var(--ink-soft); font-weight: 700; }
+.plrows { display: flex; flex-direction: column; }
+.plrow { display: flex; gap: 10px; align-items: center; padding: 8px 2px; border: 0; border-top: 1.5px dashed var(--line); background: none; text-align: left; font: inherit; color: inherit; width: 100%; cursor: pointer; }
+.plrow:first-child { border-top: 0; }
+.plrow .grow { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.plrow .pen { color: var(--ink-soft); font-size: 16px; padding: 0 4px; }
+.plrow .mvname, .moverow .mvname { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+/* the Copy button stays in sight at the bottom while its list scrolls */
+.copybar { position: sticky; bottom: 10px; z-index: 2; }
+.copybar .btn { box-shadow: var(--shadow); }
