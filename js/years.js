@@ -5,7 +5,7 @@ import * as M from './model.js';
 import { jar } from './jar.js';
 import { nameOf, ownerColor, ownerTag, ownerPossessive, bothSlots, person, whoSeg, whoPref, setPref } from './people.js';
 import { esc, money, money0, r2, toast, parseMoney, MON, monShort, openSheet, closeSheet, confirmSheet } from './ui.js';
-import { defaultYear, newPot, spreadFrom, shortTag, showMonth } from './pots.js';
+import { defaultYear, newPot, spreadFrom, shortTag, showMonth, leftLine, moveLeftSheet } from './pots.js';
 
 let year = null;
 
@@ -44,13 +44,14 @@ export function renderYears(view, ctx) {
     return `<section class="card flat pcol" style="--pc:${esc(ownerColor(o))}"><div class="card-head"><h3>${esc(ownerPossessive(o))} pots</h3><span class="sub">${list.length}</span></div>
       <div class="ytable">${list.map(p => {
         const st = M.potStats(p, y), t = st.tot, lv = M.jarLevels(st);
-        const res = !t.target ? `<span class="muted">${money0(t.balance)} in it</span>`
-          : t.reached ? `<span class="good">✅ ${t.have > t.target + 0.5 ? money0(t.have - t.target) + ' over' : 'reached'}</span>`
-            : y < now ? `<span class="warn">${money0(t.left)} short</span>` : `<span class="muted">${money0(t.left)} to go</span>`;
+        // ✅ the months planned reach the goal; green: the months ticked done did.
+        const res = !t.target ? (t.moved > 0.5 && Math.abs(t.rest) < 0.5 ? `<span class="muted">➡️ in ${y + 1}</span>` : `<span class="muted">${money0(t.rest)} in it</span>`)
+          : t.reached ? `<span class="good">${t.have > t.target + 0.5 ? money0(t.have - t.target) + ' over' : 'reached'}</span>`
+            : y < now ? `<span class="warn">⚠️ short ${money0(t.left)}</span>` : `<span class="muted">${money0(t.left)} to go</span>`;
         const pct = t.target ? Math.min(100, (t.have / t.target) * 100) : 0, usedPct = t.target ? Math.min(pct, (t.used / t.target) * 100) : 0;
         return `<button class="yrow${t.reached ? ' reached' : ''}" data-pot="${p.id}">${jar({ ...lv, size: 34, emoji: p.emoji, lid: ownerColor(p.owner), reached: t.reached })}
-          <div><div class="nm">${esc(p.name)}${t.reached ? ' ✅' : ''}${p.archived ? ' <span class="tag c-peach">put away</span>' : ''}</div>
-            <div class="meta">${t.target ? `${p.type === 'goal' ? 'Goal' : 'Target'} ${money0(t.target)} · ` : ''}${t.carry ? `${money0(t.carry)} from before · ` : ''}saved ${money0(t.saved)} · used ${money0(t.used)}</div>
+          <div><div class="nm">${esc(p.name)}${t.planOK ? ' ✅' : ''}${p.archived ? ' <span class="tag c-peach">put away</span>' : ''}</div>
+            <div class="meta">${t.target ? `${p.type === 'goal' ? 'Goal' : 'Target'} ${money0(t.target)} · ` : ''}${t.carry ? `${money0(t.carry)} from before · ` : ''}saved ${money0(t.saved)} · used ${money0(t.used)}${t.moved > 0.5 ? ` · ➡️ ${money0(t.moved)} moved to ${y + 1}` : ''}</div>
             ${t.target ? `<div class="bar"><i style="width:${pct - usedPct}%"></i><i style="width:${usedPct}%"></i></div>` : ''}</div>
           <div class="res">${res}</div></button>`;
       }).join('')}</div></section>`;
@@ -82,6 +83,7 @@ export function renderYears(view, ctx) {
         </div>
         ${bars}
         <div class="row-btns"><button class="btn sm" data-plan="${y}">✎ Change ${y}’s pots</button></div>
+        ${y < now ? leftLine(y, keep) : ''}
       </section>
       ${planNext}
       ${(who === 'all' ? [...bothSlots(), 'j'] : [who]).map(groupCard).join('')}
@@ -95,6 +97,7 @@ export function renderYears(view, ctx) {
     if (b.dataset.y) { year = +b.dataset.y; return ctx.render(); }
     if (b.dataset.pot) return ctx.go(`pot-${b.dataset.pot}@${y}`);
     if (b.dataset.plan) return ctx.go('plan-' + b.dataset.plan);
+    if (b.dataset.moveleft) return moveLeftSheet(+b.dataset.moveleft, ctx, { keep });
   };
 }
 

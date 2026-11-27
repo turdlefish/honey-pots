@@ -15,9 +15,9 @@ const inPeriod = (yearly, per) => M.fromYear(yearly, per);
 // shared ones), or just the shared ones.
 export function renderBudget(view, ctx) {
   ctx.topbar.set('Budget');
-  // The shared budget, or one of the separate ones (one person's own budget sheet): a switch at the top.
+  // The basic budget (the two of you), or one of the separate ones (one person's own budget sheet): a switch at the top.
   const book = pref('budgetBook', ''), books = xbudgets();
-  const bookSeg = `<div class="toprow"><div class="seg bookseg" role="group" aria-label="Which budget"><button data-book="" aria-pressed="${!book || !xbudget(book)}">🧾 Our budget</button>${books.map(b => `<button data-book="${esc(b.id)}" aria-pressed="${b.id === book}">🍩 ${esc(b.name)}</button>`).join('')}</div>
+  const bookSeg = `<div class="toprow"><div class="seg bookseg" role="group" aria-label="Which budget"><button data-book="" aria-pressed="${!book || !xbudget(book)}">🧾 Basic budget</button>${books.map(b => `<button data-book="${esc(b.id)}" aria-pressed="${b.id === book}">🍩 ${esc(b.name)}</button>`).join('')}</div>
     <button class="btn sm ghost" data-newbook>＋ Separate budget</button></div>`;
   if (book && xbudget(book)) return renderXBudget(view, ctx, book, bookSeg);
   const per = pref('budgetPer', 'm'), perWord = M.FREQ_LABEL[per];
@@ -43,16 +43,23 @@ export function renderBudget(view, ctx) {
 
   // Where each person's pay goes: bills by the account they come out of, savings, pots kept apart, and what's left.
   const psum = (s, big = false) => {
-    const t = tot[s], p = person(s), v = y => (y == null ? '—' : money(inPeriod(y, per), { cents: false })), accts = byAcct(s);
-    const billRows = accts.length > 1 || (accts.length === 1 && accts[0][0])
-      ? accts.map(([a, y]) => `<div class="r"><span>${a ? `Bills from ${esc(a)}` : 'Bills, no account set'}</span><b>−${v(y)}</b></div>`).join('')
-      : `<div class="r"><span>Bills &amp; spending</span><b>−${v(t.bills)}</b></div>`;
+    // Whole dollars that add up down the column: All bills is its lines added up, Left over is what's left of them.
+    const t = tot[s], p = person(s), accts = byAcct(s), R = y => Math.round(inPeriod(y, per));
+    const v = n => money(n, { cents: false }), split = accts.length > 1 || (accts.length === 1 && accts[0][0]);
+    const parts = accts.map(([a, y]) => [a, R(y)]);
+    const bills = split ? parts.reduce((x, [, n]) => x + n, 0) : R(t.bills), save = R(t.savings), apart = t.apart ? R(t.apart) : 0;
+    const income = t.income == null ? null : R(t.income), left = income == null ? null : income - bills - save - apart;
+    // By account, then all of them together.
+    const billRows = split
+      ? parts.map(([a, n]) => `<div class="r acct"><span>${a ? `Bills from ${esc(a)}` : 'Bills, no account set'}</span><b>−${v(n)}</b></div>`).join('')
+        + `<div class="r subtot"><span>All bills</span><b>−${v(bills)}</b></div>`
+      : `<div class="r"><span>Bills &amp; spending</span><b>−${v(bills)}</b></div>`;
     return `<div class="psum pcol${big ? ' big' : ''}" style="--pc:${esc(p.color)}"><div class="nm">${esc(p.name)}</div>
-      <div class="r"><span>Coming in</span><b>${t.income == null ? `<button class="linkbtn" data-income="${s}">set pay ›</button>` : `<button class="linkbtn" style="color:inherit;padding:0" data-income="${s}">${v(t.income)} ✎</button>`}</b></div>
+      <div class="r"><span>Coming in</span><b>${income == null ? `<button class="linkbtn" data-income="${s}">set pay ›</button>` : `<button class="linkbtn" style="color:inherit;padding:0" data-income="${s}">${v(income)} ✎</button>`}</b></div>
       ${billRows}
-      <div class="r"><span>Savings <small class="muted">(this month, Pots)</small></span><b>−${v(t.savings)}</b></div>
-      ${t.apart ? `<div class="r"><span>${esc(t.apartNames.join(', ') || 'Kept apart')} <small class="muted">(this month’s plan)</small></span><b>−${v(t.apart)}</b></div>` : ''}
-      <div class="r left"><span>Left over</span><b class="${t.left != null && t.left < 0 ? 'bad' : ''}">${t.left == null ? '—' : v(t.left)}</b></div></div>`;
+      <div class="r"><span>Savings <small class="muted">(this month, Pots)</small></span><b>−${v(save)}</b></div>
+      ${t.apart ? `<div class="r"><span>${esc(t.apartNames.join(', ') || 'Kept apart')} <small class="muted">(this month’s plan)</small></span><b>−${v(apart)}</b></div>` : ''}
+      <div class="r left"><span>Left over</span><b class="${left != null && left < 0 ? 'bad' : ''}">${left == null ? '—' : v(left)}</b></div></div>`;
   };
   // With a filter on: what the bills it shows add up to, and each person's share.
   const opt = (val, label, cur) => `<option value="${esc(val)}" ${val === cur ? 'selected' : ''}>${esc(label)}</option>`;

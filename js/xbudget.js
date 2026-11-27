@@ -61,7 +61,7 @@ export function renderXBudget(view, ctx, bid, bookSeg) {
   // Every part of the ring, in the groups' own order (that keeps each colour beside the same neighbours).
   const parts = groups.filter(g => g.yearly > 0.004).map(g => ({ id: g.id, name: g.name, emoji: g.emoji, yearly: g.yearly, color: colorOf(g) }));
   if (t.loose > 0.004) parts.push({ id: '_loose', name: 'Not in a group', emoji: '•', yearly: t.loose, color: 'var(--viz-more)' });
-  const leftRow = t.left != null ? { id: '_left', name: t.left >= 0 ? 'Left over' : 'Over the pay', emoji: t.left >= 0 ? '🍯' : '⚠', yearly: Math.abs(t.left), color: 'var(--viz-track)', left: true } : null;
+  const leftRow = t.left != null ? { id: '_left', name: t.left >= 0 ? 'Left over' : 'Over the pay', emoji: t.left >= 0 ? '🍯' : '⚠️', yearly: Math.abs(t.left), color: 'var(--viz-track)', left: true } : null;
 
   const ranked = [...parts].sort((x, z) => z.yearly - x.yearly);
   const meter = p => `<button class="xrow${p.left ? ' leftrow' : ''}" data-part="${esc(p.id)}" ${p.id === '_left' || p.id === '_loose' ? '' : `data-gfocus="${esc(p.id)}"`}>

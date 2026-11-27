@@ -3,7 +3,7 @@
 import * as store from './store.js';
 import * as M from './model.js';
 import { CONFIG, VERSION, APP, WEBSITE, canSync } from './config.js';
-import { person, COLORS, nameOf } from './people.js';
+import { person, COLORS, nameOf, pref, setPref } from './people.js';
 import { esc, toast, copyText, openSheet, closeSheet, confirmSheet, uid } from './ui.js';
 import { jointName } from './owings.js';
 import { importSheet, importXBudgets, seedAvailable } from './importer.js';
@@ -28,6 +28,8 @@ export function renderUs(view, ctx) {
   const s = store.getSession(), me = person(store.me()), them = person(store.partner()), st = store.getStats();
   const sync = store.getStatus().state;
   const cats = M.cats();
+  // The Owings settings fold away (open or not is remembered on this phone).
+  const owOpen = !!pref('usOwingsOpen', false);
   view.innerHTML = `<div class="cols">
     <section class="card pcol" style="--pc:${esc(me.color)}"><span class="tape" aria-hidden="true"></span>
       <div class="card-head"><h3>You two</h3></div>
@@ -53,11 +55,12 @@ export function renderUs(view, ctx) {
       ${siteRow()}
     </section>
     <section class="card flat c-lav fb-card" id="fbCard"></section>
-    <section class="card flat">
-      <div class="card-head"><h3>Owings</h3></div>
-      <label class="field"><span>Your joint account is called</span><input class="inp" id="us-joint" value="${esc(jointName())}" placeholder="Joint account" autocomplete="off"></label>
+    <section class="card flat${owOpen ? '' : ' folded'}" id="us-ow">
+      <button class="card-head foldhead" data-act="owfold" aria-expanded="${owOpen}"><h3>Owings</h3>
+        ${owOpen ? '' : `<span class="sub">${esc(jointName())} · ${cats.length} kinds of purchase</span>`}<span class="iconbtn fold" aria-hidden="true">${owOpen ? '▾' : '▸'}</span></button>
+      ${owOpen ? `<label class="field"><span>Your joint account is called</span><input class="inp" id="us-joint" value="${esc(jointName())}" placeholder="Joint account" autocomplete="off"></label>
       <div class="field"><span>Kinds of purchase</span><div class="lines" id="us-cats">${cats.map(c => `<div class="catrow" data-cat="${esc(c.id)}"><input class="inp emo" data-cemo value="${esc(c.emoji)}" aria-label="Picture"><input class="inp" data-cname value="${esc(c.name)}" aria-label="Name"><button class="linkbtn" data-cdel="${esc(c.id)}" aria-label="Remove">✕</button></div>`).join('')}</div>
-        <div class="row-btns"><button class="btn sm ghost" data-act="addcat">＋ Add a kind</button><button class="btn sm" data-act="savecats">Save kinds</button></div></div>
+        <div class="row-btns"><button class="btn sm ghost" data-act="addcat">＋ Add a kind</button><button class="btn sm" data-act="savecats">Save kinds</button></div></div>` : ''}
     </section>
     </div>
     ${CONFIG.isLocalHost ? `<section class="card flat c-peach" id="us-dev"><div class="card-head"><h3>${CONFIG.mock ? 'Test server' : 'On this computer'}</h3></div>
@@ -88,6 +91,7 @@ export function renderUs(view, ctx) {
     const a = t.dataset.act;
     if (a === 'copy') toast((await copyText(s.space)) ? 'Code copied' : 'Select the code to copy it');
     if (a === 'copysite') toast((await copyText(WEBSITE)) ? 'Website link copied' : `The website is ${siteName()}`);
+    if (a === 'owfold') { setPref('usOwingsOpen', !owOpen); return ctx.render(true); }
     if (a === 'importx') return importXBudgets(ctx);
     if (a === 'sync') { await store.syncNow(); toast('Synced'); ctx.render(true); }
     if (a === 'name') return editName(ctx);

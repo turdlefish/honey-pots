@@ -153,11 +153,20 @@ function flows(pot, y) {
  * A pot's numbers for a year (a yearly pot's own year, or a goal pot's calendar year):
  * per person and in total. have = brought in + saved (how full it got), balance = what's
  * in it now (have − used), left = still to put in to reach the target.
+ *   planned = where the plan gets it to: what's in, plus every month planned but not ticked yet
+ *             (a goal: in the years after this one too); short = how far that is from the target
+ *   planOK  = the months planned reach the target (a ✅ by the pot's name)
+ *   reached = the months ticked done (and money put in by hand) reach it (the pot goes green)
+ *   moved   = a yearly pot: what the next year brought over from this one (its carry); rest = balance − moved
  */
 export function potStats(pot, y) {
   return memo(`stats:${pot.id}:${y}`, () => {
     const f = flows(pot, y), py = pot.type === 'year' ? potYear(pot.id, y) : null;
-    const per = {}, tot = { target: null, carry: 0, plan: 0, saved: 0, used: 0, have: 0, balance: 0, left: 0, unplanned: 0 };
+    const next = pot.type === 'year' ? potYear(pot.id, y + 1) : null;
+    const KEYS = ['carry', 'plan', 'saved', 'used', 'have', 'balance', 'left', 'unplanned', 'planned', 'short', 'moved', 'rest'];
+    const per = {}, tot = Object.fromEntries(KEYS.map(k => [k, 0]));
+    tot.target = null;
+    const toCome = (yr, s) => Object.values(cellsOf(pot.id, yr)[s] || {}).reduce((x, c) => x + (c.done ? 0 : cellPlan(c)), 0);
     for (const s of slotsOf(pot)) {
       let target, carry = 0;
       if (pot.type === 'year') { target = py?.target?.[s] ?? null; carry = py?.carry?.[s] || 0; }
@@ -168,40 +177,49 @@ export function potStats(pot, y) {
         for (const yr of yearsOfPot(pot)) if (yr < y) { const g = flows(pot, yr)[s]; carry += g.saved - g.used; }
       }
       const x = f[s];
-      const have = r2(carry + x.saved);
+      const have = r2(carry + x.saved), balance = r2(have - x.used);
+      let planned = have + toCome(y, s);
+      if (pot.type === 'goal') for (const yr of yearsOfPot(pot)) if (yr > y) planned += toCome(yr, s) + flows(pot, yr)[s].saved;
+      planned = r2(planned);
+      const moved = r2(+next?.carry?.[s] || 0);
       const p = {
-        ...x, target, carry: r2(carry), have, balance: r2(have - x.used),
+        ...x, target, carry: r2(carry), have, balance,
         left: target != null ? r2(Math.max(0, target - have)) : 0,
         unplanned: target != null ? r2(Math.max(0, target - carry - x.plan - (x.added || 0))) : 0,
+        planned, short: target != null ? r2(Math.max(0, target - planned)) : 0,
+        planOK: target != null && target > 0 && planned >= target - 0.5,
         // This person's part is in: the months ticked done (and money put in by hand) reach their target.
         reached: target != null && target > 0 && have >= target - 0.5,
+        moved, rest: r2(balance - moved),
       };
       per[s] = p;
-      for (const k of ['carry', 'plan', 'saved', 'used', 'have', 'balance', 'left', 'unplanned']) tot[k] = r2(tot[k] + p[k]);
+      for (const k of KEYS) tot[k] = r2(tot[k] + p[k]);
     }
     // A shared pot only has a total target when you both have one (else each person's shows on its page).
     const slots = slotsOf(pot);
     if (slots.every(s => per[s].target != null)) tot.target = r2(slots.reduce((t, s) => t + per[s].target, 0));
-    else { tot.left = 0; tot.unplanned = 0; tot.partTarget = slots.some(s => per[s].target != null); }
+    else { tot.left = 0; tot.unplanned = 0; tot.short = 0; tot.partTarget = slots.some(s => per[s].target != null); }
     tot.reached = tot.target != null && tot.target > 0 && tot.have >= tot.target - 0.5;
+    tot.planOK = tot.target != null && tot.target > 0 && tot.planned >= tot.target - 0.5;
     return { per, tot, py };
   });
 }
 /**
- * Has a pot reached its goal for some of you (slots), by the months ticked done? And where the
- * plan gets it to by the end of that year (money in + the months not ticked yet), against the target.
- * { target, have, left, reached, planned, short, over, each: { a: reached? } } — target null when not all of them have one.
+ * A pot's goal for some of you (slots): ✅ planOK when the months planned get there, reached (green)
+ * when the months ticked done do, and how far the plan is from it (short) or past it (over).
+ * { target, have, left, planned, short, over, planOK, reached, each: { a: reached? }, plan: { a: planOK? } }
+ * — target null when not all of them have one.
  */
 export function goalCheck(pot, y, slots = slotsOf(pot)) {
-  const st = potStats(pot, y), cells = cellsOf(pot.id, y), rows = slots.filter(s => st.per[s]);
-  const each = Object.fromEntries(rows.map(s => [s, st.per[s].reached]));
-  if (!rows.length || !rows.every(s => st.per[s].target != null)) return { target: null, have: r2(rows.reduce((t, s) => t + st.per[s].have, 0)), reached: false, each };
-  const target = r2(rows.reduce((t, s) => t + st.per[s].target, 0)), have = r2(rows.reduce((t, s) => t + st.per[s].have, 0));
-  const toCome = r2(rows.reduce((t, s) => t + Object.values(cells[s] || {}).reduce((x, c) => x + (c.done ? 0 : cellPlan(c)), 0), 0));
-  const planned = r2(have + toCome);
+  const st = potStats(pot, y), rows = slots.filter(s => st.per[s]);
+  const each = Object.fromEntries(rows.map(s => [s, st.per[s].reached])), plan = Object.fromEntries(rows.map(s => [s, st.per[s].planOK]));
+  const sum = k => r2(rows.reduce((t, s) => t + st.per[s][k], 0));
+  if (!rows.length || !rows.every(s => st.per[s].target != null)) return { target: null, have: sum('have'), reached: false, planOK: false, each, plan };
+  const target = sum('target'), have = sum('have'), planned = sum('planned');
   return {
-    target, have, left: r2(Math.max(0, target - have)), reached: target > 0 && have >= target - 0.5, each,
-    planned, short: r2(Math.max(0, target - planned)), over: r2(Math.max(0, planned - target)),
+    target, have, left: r2(Math.max(0, target - have)), each, plan, planned,
+    short: r2(Math.max(0, target - planned)), over: r2(Math.max(0, planned - target)),
+    planOK: target > 0 && planned >= target - 0.5, reached: target > 0 && have >= target - 0.5,
   };
 }
 /**
@@ -304,6 +322,37 @@ export function lifetime(pot) {
 
 /** The yearly pots that are part of a year (not put away). */
 export const yearPots = y => allPots().filter(p => p.type === 'year' && potYear(p.id, y));
+
+/**
+ * What's left in a year's pots that hasn't gone on to the next year: [{ pot, amt: {a?, b?}, tot, inNext }].
+ * amt is each person's money still to move (below 0: the next year brought over more than is left now).
+ * Moving it makes it the next year's "From <y>" money (its carry); the year keeps its history.
+ */
+export function leftovers(y) {
+  return memo('left:' + y, () => yearPots(y).map(pot => {
+    const st = potStats(pot, y), slots = slotsOf(pot);
+    const amt = Object.fromEntries(slots.map(s => [s, r2(Math.max(0, st.per[s].balance) - st.per[s].moved)]));
+    return { pot, amt, tot: r2(slots.reduce((t, s) => t + amt[s], 0)), inNext: !!potYear(pot.id, y + 1) };
+  }).filter(x => Object.values(x.amt).some(v => Math.abs(v) > 0.5)));
+}
+/**
+ * Moves what's left in these pots in year y into y + 1 (a pot not in y + 1 yet joins it, without a
+ * target). Returns what each pot's y + 1 was before, for Undo.
+ */
+export function moveLeftovers(y, potIds) {
+  const fields = {}, before = {};
+  for (const id of potIds) {
+    const pot = getPot(id);
+    if (!pot || pot.type !== 'year' || !potYear(id, y)) continue;
+    const st = potStats(pot, y), cur = potYear(id, y + 1);
+    const carry = { ...(cur?.carry || {}) };
+    for (const s of slotsOf(pot)) { const v = r2(Math.max(0, st.per[s].balance)); if (v > 0) carry[s] = v; else delete carry[s]; }
+    before['py:' + id] = cur;
+    fields['py:' + id] = { ...(cur || { target: {} }), carry: Object.keys(carry).length ? carry : undefined };
+  }
+  if (Object.keys(fields).length) setYearFields(y + 1, fields);
+  return before;
+}
 /** Takes a pot out of a year: only when nothing has gone in, so no history is lost. */
 export function removeFromYear(pot, y) {
   const fields = { ['py:' + pot.id]: null }, cells = cellsOf(pot.id, y);

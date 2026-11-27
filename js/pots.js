@@ -27,10 +27,10 @@ export function defaultYear(pot) {
   return before.length ? before[before.length - 1] : ys[0];
 }
 const yearTag = (pot, y) => (pot.type === 'year' ? (M.potYear(pot.id, y)?.label || String(y)) : 'Goal');
-/** "⚠ short by Mar": the plan won't have enough by a date the pot's money is needed. */
+/** "⚠️ short by Mar": the plan won't have enough by a date the pot's money is needed. */
 export const shortTag = (pot, y) => {
   const c = M.firstShort(pot, y);
-  return c ? `<span class="tag c-peach" title="${esc(money(c.shortTot))} short by ${esc(ymLabel(c.due.ym))}">⚠ short by ${esc(monShort(c.due.ym))}</span>` : '';
+  return c ? `<span class="tag c-peach" title="${esc(money(c.shortTot))} short by ${esc(ymLabel(c.due.ym))}">⚠️ short by ${esc(monShort(c.due.ym))}</span>` : '';
 };
 
 // ── The Pots tab ─────────────────────────────────────────────────────────
@@ -66,6 +66,7 @@ export function renderPots(view, ctx) {
     if (t.dataset.allhist) return historySheet(t.dataset.allhist, ctx);
     if (t.dataset.m) { month = t.dataset.m === '0' ? M.nowYM() : M.addMonths(month, +t.dataset.m); return ctx.render(true); }
     if (t.dataset.ay) { allYear = +t.dataset.ay; return ctx.render(true); }
+    if (t.dataset.moveleft) return moveLeftSheet(+t.dataset.moveleft, ctx, { keep: p => who === 'all' || p.owner === who });
     if (t.dataset.edityear) return ctx.go(`plan-${t.dataset.edityear}@pots`);
     if (t.dataset.plangrid) return ctx.go(`months-${t.dataset.plangrid}-${t.dataset.py || M.yearOfYM(month)}`);
     if (t.dataset.pot) return ctx.go('pot-' + t.dataset.pot + (t.dataset.year ? '@' + t.dataset.year : ''));
@@ -104,7 +105,7 @@ function featured() {
     return `<button class="card featured ${st.tot.reached ? 'c-mint reached' : 'c-honey'}" data-pot="${p.id}" data-year="${y}"><span class="tape" aria-hidden="true"></span>
       <div class="pothead">${jarOf(p, y, 62)}<div class="grow">
         <div class="eyebrow">Kept apart from savings</div>
-        <div class="ftitle">${esc(p.name)}${st.tot.reached ? ' ✅' : ''}</div>
+        <div class="ftitle">${esc(p.name)}${st.tot.planOK ? ' ✅' : ''}</div>
         <div class="bigamt">${money0(balance)}<small>${goalTot ? `of ${money0(goalTot)}` : 'saved so far'}</small></div>
         ${life.tot.extra ? `<div class="tiny muted">${money0(life.tot.put - life.tot.used)} through the pot + ${money0(life.tot.extra)} in your own accounts</div>` : ''}</div></div>
       ${whoPut(p, life, goal)}</button>`;
@@ -338,8 +339,8 @@ function monthCard(slot, sharedOnly = false) {
   const row = l => {
     const plan = M.cellPlan(l.cell), done = !!l.cell.done, other = l.year !== M.yearOfYM(month) && l.pot.type === 'year';
     const st = M.potStats(l.pot, l.year);
-    // ✅ once this person's part of the pot is in (by the months ticked done).
-    const mineIn = st.per[slot]?.reached;
+    // ✅ once this person's months planned reach their part of the goal; green once the months ticked done do.
+    const planOK = st.per[slot]?.planOK, mineIn = st.per[slot]?.reached;
     const meta = [
       l.pot.owner === 'j' ? ownerTag('j') : '',
       other ? `<span class="tag c-lav">for ${esc(yearTag(l.pot, l.year))}</span>` : '',
@@ -348,9 +349,9 @@ function monthCard(slot, sharedOnly = false) {
       mineIn ? `<span class="good">${l.pot.owner === 'j' ? `${esc(nameOf(slot))}’s part is in` : 'goal reached'}</span>` : shortTag(l.pot, l.year),
     ].filter(Boolean).join('');
     const key = `${l.pot.id}|${l.year}|${slot}|${month}`;
-    return `<div class="arow${done ? ' is-done' : ''}">
+    return `<div class="arow${done ? ' is-done' : ''}${mineIn ? ' reached' : ''}">
       <button class="amtbtn" data-pot="${l.pot.id}" data-year="${l.year}" aria-label="Open ${esc(l.pot.name)}">${jarOf(l.pot, l.year, 38)}</button>
-      <div><div class="nm"><button data-pot="${l.pot.id}" data-year="${l.year}">${esc(l.pot.name)}${mineIn ? ' ✅' : ''}</button></div><div class="meta">${meta}</div></div>
+      <div><div class="nm"><button data-pot="${l.pot.id}" data-year="${l.year}">${esc(l.pot.name)}${planOK ? ' ✅' : ''}</button></div><div class="meta">${meta}</div></div>
       <button class="amtbtn amt" data-cell="${key}">${money(done && l.cell.amt != null ? l.cell.amt : plan)}</button>
       <button class="check" data-done="${key}" aria-pressed="${done}" aria-label="${done ? 'Done' : 'Mark done'}">✓</button></div>`;
   };
@@ -388,17 +389,19 @@ function allView(who = 'all') {
     const st = M.potStats(p, py), t = st.tot;
     const later = p.type === 'year' && M.potYear(p.id, py + 1) && py === now;
     return `<button class="jcard${t.reached ? ' done-y' : ''}" data-pot="${p.id}" data-year="${py}">${jarOf(p, py, 46)}
-      <div class="grow"><div class="t">${esc(p.name)}${t.reached ? ' ✅' : ''}</div>
+      <div class="grow"><div class="t">${esc(p.name)}${t.planOK ? ' ✅' : ''}</div>
       <div class="s">${t.target ? `${money0(t.have)} of ${money0(t.target)}${t.reached ? ' · reached' : ''}` : `${money0(t.balance)} in it`}</div>
       <div class="tags"><span class="tag ${p.type === 'year' ? 'plain' : 'c-mint'}">${esc(p.type === 'year' ? yearTag(p, py) : 'Goal')}</span>${later ? `<span class="tag c-lav">${py + 1} started</span>` : ''}${shortTag(p, py)}</div></div></button>`;
   };
   // Does what's filled in work? Each month against the savings amount, and money needed by a date.
   const checks = bothSlots().map(s => {
     const bad = M.yearMonthCheck(s, y).filter(r => !r.ok);
-    return bad.length ? `<button class="sumline short" data-edityear="${y}">⚠ ${esc(nameOf(s))}: ${bad.length === 12 ? `none of ${y}’s months add up yet` : `${bad.length === 1 ? '1 month' : `${bad.length} months`} of ${y} ${bad.length === 1 ? 'doesn’t' : 'don’t'} add up (${bad.map(r => monShort(r.ym)).join(', ')})`} ›</button>`
+    return bad.length ? `<button class="sumline short" data-edityear="${y}">⚠️ ${esc(nameOf(s))}: ${bad.length === 12 ? `none of ${y}’s months add up yet` : `${bad.length === 1 ? '1 month' : `${bad.length} months`} of ${y} ${bad.length === 1 ? 'doesn’t' : 'don’t'} add up (${bad.map(r => monShort(r.ym)).join(', ')})`} ›</button>`
       : `<div class="sumline ok">✓ ${esc(nameOf(s))}: every month of ${y} adds up</div>`;
   }).join('') + yearly.map(p => ({ p, c: M.firstShort(p, y) })).filter(x => x.c).map(({ p, c }) =>
-    `<button class="sumline over" data-pot="${p.id}" data-year="${y}">⚠ ${esc(p.name)}: ${money(c.shortTot)} short of what’s needed by ${esc(ymLabel(c.due.ym))} ›</button>`).join('');
+    `<button class="sumline over" data-pot="${p.id}" data-year="${y}">⚠️ ${esc(p.name)}: ${money(c.shortTot)} short of what’s needed by ${esc(ymLabel(c.due.ym))} ›</button>`).join('')
+    // A year that's over with money still in its pots: move it on into the next year.
+    + (y < now ? leftLine(y, p => who === 'all' || p.owner === who) : '');
   const sec = (o, list, py) => (list.length ? `<div class="group-h"><h3>${esc(ownerPossessive(o))} pots</h3><span class="small muted">${list.length}</span></div>
       <div class="jargrid">${list.map(p => card(p, py)).join('')}</div>` : '');
   return `<div class="stepper"><button class="iconbtn" data-ay="${prev ?? ''}" ${prev == null ? 'disabled' : ''} aria-label="Year before">‹</button>
@@ -412,6 +415,61 @@ function allView(who = 'all') {
     ${goals.length ? `<div class="group-h" style="margin-top:6px"><h3>Goals</h3><span class="small muted">keep going year to year</span></div>
       <div class="jargrid">${goals.map(p => card(p, Math.min(y, now))).join('')}</div>` : ''}
     ${archived ? `<button class="linkbtn" data-act="archived">Put-away pots (${archived}) ›</button>` : ''}`;
+}
+
+/** "💰 $340 still in 2025’s pots · Move what’s left into 2026 ›" for a year that's over (or nothing). */
+export function leftLine(y, keep = () => true) {
+  const list = M.leftovers(y).filter(x => keep(x.pot)), up = list.filter(x => x.tot > 0.5);
+  if (!list.length) return '';
+  const amt = r2(up.reduce((t, x) => t + x.tot, 0));
+  return up.length
+    ? `<button class="sumline short" data-moveleft="${y}">💰 ${money0(amt)} still in ${y}’s pots (${up.length}) · Move what’s left into ${y + 1} ›</button>`
+    : `<button class="sumline over" data-moveleft="${y}">⚠️ ${y + 1} brought over more than ${y}’s pots have left now: match it ›</button>`;
+}
+
+/**
+ * Moves what's left in a year's pots into the next year: it becomes each pot's "From <y>" money there.
+ * keep: which pots (the Whose switch); only: just one pot (from its page).
+ */
+export function moveLeftSheet(y, ctx, { keep = () => true, only = null } = {}) {
+  const list = M.leftovers(y).filter(x => keep(x.pot) && (!only || x.pot.id === only)), ny = y + 1;
+  if (!list.length) return toast(`Nothing left to move from ${y}`);
+  const row = x => {
+    const slots = M.slotsOf(x.pot), down = x.tot < 0;
+    const bits = [slots.length > 1 ? slots.filter(s => Math.abs(x.amt[s]) > 0.5).map(s => `${esc(nameOf(s))} ${x.amt[s] < 0 ? '−' : ''}${money(Math.abs(x.amt[s]))}`).join(' · ') : '',
+      down ? `${ny} brought over more than is left now: it goes down` : '',
+      x.inNext ? '' : `not in ${ny} yet: it joins ${ny} with this money`].filter(Boolean).join(' · ');
+    return `<label class="moverow"><input type="checkbox" data-mv="${x.pot.id}" ${only ? 'checked' : ''}>
+      <span class="grow"><span class="mvname"><b>${esc(x.pot.emoji || '🍯')} ${esc(x.pot.name)}</b>${ownerTag(x.pot.owner)}</span>${bits ? `<span class="tiny muted">${bits}</span>` : ''}</span>
+      <b class="num${down ? ' bad' : ''}">${down ? '−' : ''}${money(Math.abs(x.tot))}</b></label>`;
+  };
+  const el = openSheet(`<h3>💰 Move what’s left in ${y} into ${ny}</h3>
+    <p class="small muted">${only ? 'It starts' : 'Tick the pots whose money is really still there: if you spent from a pot without taking it out here, Honey Pots still counts it as in. Each starts'} ${ny} with it, as its <b>From ${y}</b> money, so it counts towards ${ny}’s target. ${y} keeps its history. Months already planned in ${ny} stay as they are (<b>Spread it out</b> on a pot re-plans them).</p>
+    ${list.length > 1 ? '<div class="row-btns"><button class="linkbtn" data-all="1">Tick all</button><button class="linkbtn" data-all="0">Untick all</button></div>' : ''}
+    <div class="moverows">${list.map(row).join('')}</div>
+    <div class="row-btns end"><button class="btn ghost" data-close>Cancel</button><button class="btn primary" data-move></button></div>`);
+  const picked = () => [...el.querySelectorAll('[data-mv]:checked')].map(c => c.dataset.mv);
+  const sumOf = ids => r2(list.filter(x => ids.includes(x.pot.id)).reduce((t, x) => t + x.tot, 0));
+  const label = () => {
+    const ids = picked(), amt = sumOf(ids), btn = el.querySelector('[data-move]');
+    btn.textContent = !ids.length ? `Move into ${ny}` : amt >= 0 ? `Move ${money(amt)} into ${ny}` : `Match ${ny}`;
+    btn.disabled = !ids.length;
+  };
+  label();
+  el.addEventListener('change', label);
+  el.onclick = e => {
+    const all = e.target.closest('[data-all]');
+    if (all) { el.querySelectorAll('[data-mv]').forEach(c => { c.checked = all.dataset.all === '1'; }); return label(); }
+    if (e.target.closest('[data-close]')) return closeSheet();
+    if (!e.target.closest('[data-move]')) return;
+    const ids = picked();
+    if (!ids.length) return toast('Tick a pot to move');
+    const amt = sumOf(ids);
+    const before = M.moveLeftovers(y, ids);
+    closeSheet();
+    toast(amt >= 0 ? `Moved ${money(amt)} into ${ny}` : `${ny} matches what’s left in ${y}`, { label: 'Undo', run: () => { M.setYearFields(ny, before); ctx.render(true); } });
+    ctx.render(true);
+  };
 }
 
 function archivedSheet(ctx) {
@@ -639,7 +697,7 @@ export function renderPot(view, ctx, arg) {
   const yearSel = `<div class="stepper"><button class="iconbtn" data-y="${prev ?? ''}" ${prev == null ? 'disabled' : ''} aria-label="Year before">‹</button>
       <span class="label">${esc(pot.type === 'year' ? yearTag(pot, y) : String(y))}${pot.type === 'year' && !ys.includes(y) ? '<span class="tiny">not planned yet</span>' : pot.type === 'goal' ? '<span class="tiny">month by month</span>' : ''}</span>
       ${next != null ? `<button class="iconbtn" data-y="${next}" aria-label="Year after">›</button>` : pot.type === 'year' ? `<button class="btn sm" data-plan-next="${y + 1}">Plan ${y + 1} ›</button>` : '<button class="iconbtn" disabled aria-label="Year after">›</button>'}</div>`;
-  const stat = (k, v, x = '') => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div>${x ? `<div class="x">${x}</div>` : ''}</div>`;
+  const stat = (k, v, x = '', cls = '') => `<div class="stat${cls ? ' ' + cls : ''}"><div class="k">${k}</div><div class="v">${v}</div>${x ? `<div class="x">${x}</div>` : ''}</div>`;
   const f = st.per;
   const doneMonths = slots.reduce((n, s) => n + f[s].done, 0), allMonths = slots.reduce((n, s) => n + f[s].months, 0);
   const added = r2(slots.reduce((n, s) => n + (f[s].added || 0), 0));
@@ -651,10 +709,15 @@ export function renderPot(view, ctx, arg) {
     ${stat(pot.type === 'goal' ? `Saved in ${y}` : 'Saved', money(t.saved), [allMonths ? `${doneMonths} of ${allMonths} months done` : '', added ? `${money(added)} put in by hand` : ''].filter(Boolean).join(' · '))}
     ${t.carry ? stat(pot.type === 'goal' ? `Before ${y}${M.extrasList(pot).length ? ' + own accounts' : ''}` : `From ${y - 1}`, money(t.carry)) : ''}
     ${stat('Used', money(t.used))}
-    ${stat('In the pot', money(t.balance))}
-    ${t.target ? (t.reached ? stat('Goal reached', '✅', `${money(t.have)} in`) : stat('Still to save', money(t.left), t.unplanned > 0.5
-      ? `<span class="warn">⚠ the months planned are ${money(t.unplanned)} short</span>` : 'the months planned get there')) : ''}
+    ${stat('In the pot', money(t.balance), t.moved > 0.5 ? `➡️ ${money(t.moved)} of it went on to ${y + 1}` : '')}
+    ${t.target ? (t.reached ? stat('Goal reached', money(t.have), 'the months ticked done got there', 'is-in')
+      : stat('Still to save', money(t.left), t.planOK ? '✅ planned' : `<span class="warn">⚠️ short ${money(t.short)}</span>`)) : ''}
   </div>`;
+  // A year that's over with money still in it: move it on into the next year.
+  const left = pot.type === 'year' && y < M.nowYear() ? M.leftovers(y).find(x => x.pot.id === pot.id) : null;
+  const leftHTML = !left ? '' : left.tot > 0.5
+    ? `<button class="sumline short" data-moveleft="${y}">💰 ${money(left.tot)} still in it from ${y}: move it into ${y + 1} ›</button>`
+    : `<button class="sumline over" data-moveleft="${y}">⚠️ ${y + 1} brought over more than is left in it now: match it ›</button>`;
   // Shared pots: who's put what in (a goal: everything so far; a yearly pot: this year).
   let perPerson = '';
   if (pot.owner === 'j') {
@@ -670,11 +733,11 @@ export function renderPot(view, ctx, arg) {
   const acct = M.accountOfPot(pot.id);
   view.innerHTML = `<div class="cols">
     <section class="card pcol span" style="--pc:${esc(ownerColor(pot.owner))}"><span class="tape" aria-hidden="true"></span>
-      <div class="pothead">${jarOf(pot, y, 86)}<div class="grow"><h1>${esc(pot.name)}${t.reached ? ' ✅' : ''}</h1>
+      <div class="pothead">${jarOf(pot, y, 86)}<div class="grow"><h1>${esc(pot.name)}${t.planOK ? ' ✅' : ''}</h1>
         <div class="line">${ownerTag(pot.owner)}<span class="tag ${pot.type === 'goal' ? 'c-mint' : 'plain'}">${pot.type === 'goal' ? 'Goal' : 'Every year'}</span>${pot.separate ? '<span class="tag c-honey">kept apart</span>' : ''}${acct ? `<span class="tag plain">🏦 ${esc(acct.name)}</span>` : ''}${pot.archived ? '<span class="tag c-peach">put away</span>' : ''}</div>
         ${pot.note ? `<p class="small muted" style="margin-top:6px">${esc(pot.note)}</p>` : ''}</div>
         <button class="iconbtn" data-edit aria-label="Edit pot">✎</button></div>
-      ${yearSel}${stats}${acts}${perPerson}
+      ${yearSel}${stats}${leftHTML}${acts}${perPerson}
     </section>
     ${dues.length ? dueCard(pot, y) : ''}
     ${pot.type === 'goal' ? extrasCard(pot) : ''}
@@ -687,6 +750,10 @@ export function renderPot(view, ctx, arg) {
     if (!b) return;
     if (b.dataset.y) { potYearShown[id] = +b.dataset.y; return ctx.render(); }
     if (b.dataset.planNext) return planYearOf(pot, +b.dataset.planNext, ctx);
+    if (b.dataset.moveleft) {
+      if (!M.potYear(pot.id, y + 1)) return planYearOf(pot, y + 1, ctx, { carry: true });
+      return moveLeftSheet(+b.dataset.moveleft, ctx, { only: pot.id });
+    }
     if (b.hasAttribute('data-edit')) return editPot(pot, ctx, y);
     if (b.hasAttribute('data-target')) return editTarget(pot, y, ctx);
     if (b.dataset.done) {
@@ -842,9 +909,9 @@ function dueCard(pot, y) {
         <div class="when"><b>${esc(monShort(c.due.ym))}</b><span>${esc(c.due.ym.slice(0, 4))}</span></div>
         <div class="grow"><div><b>${money(c.due.amt)}</b>${c.due.note ? ` · ${esc(c.due.note)}` : ''}${c.cum !== +c.due.amt ? ` <span class="muted small">(${money(c.cum)} in all by then)</span>` : ''}</div>
           <div class="small ${c.ok ? 'good' : 'bad'}" style="font-weight:800">${c.ok ? `✓ Enough by then: ${money(sum(c.have))} planned by the end of ${esc(monthName(c.due.ym))}`
-            : `⚠ Only ${money(sum(c.have))} by the end of ${esc(monthName(c.due.ym))}: ${money(c.shortTot)} short${slots.length > 1 ? ` (${slots.filter(s => c.short[s] > 0).map(s => `${esc(nameOf(s))} ${money(c.short[s])}`).join(', ')})` : ''}`}</div></div></button>`).join('')}</div>
+            : `⚠️ Only ${money(sum(c.have))} by the end of ${esc(monthName(c.due.ym))}: ${money(c.shortTot)} short${slots.length > 1 ? ` (${slots.filter(s => c.short[s] > 0).map(s => `${esc(nameOf(s))} ${money(c.short[s])}`).join(', ')})` : ''}`}</div></div></button>`).join('')}</div>
       ${anyShort ? `<div class="row-btns"><button class="btn sm primary" data-replan>Re-plan the months to fit</button><span class="hint grow">Puts enough into the months before each date${pot.type === 'year' ? ' and spreads the rest after' : ''}. Months ticked done stay as they are.</span></div>` : ''}`
-    : `<p class="small muted">If this pot pays for something at a set time (car insurance in March, Christmas in December), add the date. You’ll see a ⚠ when the months you’ve filled in won’t have enough by then.</p>`}
+    : `<p class="small muted">If this pot pays for something at a set time (car insurance in March, Christmas in December), add the date. You’ll see a ⚠️ when the months you’ve filled in won’t have enough by then.</p>`}
   </section>`;
 }
 
@@ -927,10 +994,11 @@ function planCard(pot, y) {
   }
   const st = M.potStats(pot, y);
   const totals = `<div class="tot k">Total</div>` + slots.map(s => `<div class="tot">${money(st.per[s].plan)}<div class="tiny muted">${money(st.per[s].saved)} in</div></div>`).join('');
-  // Green once the months ticked done reach the goal; ✅ by each person whose part is in.
-  return `<section class="card${st.tot.reached ? ' c-mint reached' : ''}"><div class="card-head"><h3>Month by month${pot.type === 'year' ? ` · ${esc(yearTag(pot, y))}` : ` · ${y}`}${st.tot.reached ? ' ✅' : ''}</h3><button class="btn sm" data-spread>Spread it out</button></div>
-    <p class="hint">Tap an amount to change it. Tick a month once the money is in${st.tot.target ? ': it goes green when the ticked months reach the goal' : ''}.${overSeen ? ' <span class="bad">Red amounts: that month’s pots add up to more than the savings amount.</span>' : ''}</p>
-    <div class="plan" style="--cols:${slots.length}"><div class="h"></div>${slots.map(s => `<div class="h">${slots.length > 1 ? esc(nameOf(s)) : 'Amount'}${st.per[s].reached ? ' ✅' : ''}</div>`).join('')}${rows}${totals}</div></section>`;
+  // ✅ once the months planned reach the goal (by each person whose part they reach); green once the months ticked done do.
+  const anyTarget = slots.some(s => st.per[s].target != null);
+  return `<section class="card${st.tot.reached ? ' c-mint reached' : ''}"><div class="card-head"><h3>Month by month${pot.type === 'year' ? ` · ${esc(yearTag(pot, y))}` : ` · ${y}`}${st.tot.planOK ? ' ✅' : ''}</h3><button class="btn sm" data-spread>Spread it out</button></div>
+    <p class="hint">Tap an amount to change it. Tick a month once the money is in.${anyTarget ? ' ✅ shows when the months planned reach the goal, and it goes green when the ticked months do.' : ''}${overSeen ? ' <span class="bad">Red amounts: that month’s pots add up to more than the savings amount.</span>' : ''}</p>
+    <div class="plan" style="--cols:${slots.length}"><div class="h"></div>${slots.map(s => `<div class="h${slots.length > 1 && st.per[s].reached ? ' good' : ''}">${slots.length > 1 ? esc(nameOf(s)) + (st.per[s].planOK ? ' ✅' : '') : 'Amount'}</div>`).join('')}${rows}${totals}</div></section>`;
 }
 
 async function editTarget(pot, y, ctx) {
@@ -976,12 +1044,12 @@ function spreadSheet(pot, y, ctx) {
 }
 
 // ── Planning another year of one pot ─────────────────────────────────────
-function planYearOf(pot, y, ctx) {
+function planYearOf(pot, y, ctx, { carry: carryOn = false } = {}) {
   const prev = M.potStats(pot, y - 1), slots = M.slotsOf(pot);
   const el = openSheet(`<h3>${esc(pot.name)} in ${y}</h3>
     <p class="muted small">Start with last year’s target, or change it. You can also do every pot at once from <b>Years</b>.</p>
     <div class="${slots.length > 1 ? 'fields2' : ''}">${slots.map(s => `<label class="field"><span>${slots.length > 1 ? esc(nameOf(s)) : 'Target'}</span><input class="inp money" data-amt="${s}" inputmode="decimal" value="${prev.per[s].target != null ? esc(String(prev.per[s].target)) : ''}" placeholder="$0"></label>`).join('')}</div>
-    ${prev.tot.balance > 0.5 ? `<label class="toggle"><input type="checkbox" id="py-carry"> Bring over what’s left from ${y - 1} (${money(prev.tot.balance)})</label>` : ''}
+    ${prev.tot.balance > 0.5 ? `<label class="toggle"><input type="checkbox" id="py-carry" ${carryOn ? 'checked' : ''}> Bring over what’s left from ${y - 1} (${money(prev.tot.balance)})</label>` : ''}
     <label class="toggle"><input type="checkbox" id="py-spread" checked> Spread it over ${y}’s months</label>
     <div class="row-btns end"><button class="btn ghost" data-close>Cancel</button><button class="btn primary" data-save>Plan ${y}</button></div>`);
   el.onclick = e => {
@@ -1004,8 +1072,8 @@ function planYearOf(pot, y, ctx) {
 // Route months-<all|a|b|j>-<year> ("both" was the old word for all). Like filling in the spreadsheet:
 // every pot's amount for every month, with each month's total checked against what goes into savings.
 // All: the two of you together (shared pots get a row for each of you). Shared: only the shared pots.
-// A pot's card goes green with a ✅ once the months ticked done reach its goal, and each person gets
-// a ✅ by their name once their part is in. Cards fold away (remembered on this phone).
+// A pot gets a ✅ by its name once the months planned reach its goal, and its card goes green once the
+// months ticked done do; each person's row the same for their part. Cards fold away (remembered on this phone).
 export function renderMonthPlan(view, ctx, arg) {
   const [w, ys] = String(arg).split('-'), y = +ys, who = w === 'both' ? 'all' : w;
   if (!['all', 'a', 'b', 'j'].includes(who) || !y) return false;
@@ -1050,12 +1118,13 @@ export function renderMonthPlan(view, ctx, arg) {
         <small>${esc(monShort(m))}${due.has(m) ? ' 💳' : ''}</small><b>${shown ? money0(shown) : '—'}</b></button>`;
     }).join('')}</div>`;
   };
-  // Where a goal stands: what it is, what's in (ticked months and money put in), and whether the plan gets there.
+  // Where a goal stands: what it is, what's in (ticked months and money put in), and how far the plan is from it.
+  // (A ✅ by the name says the months planned get there.)
   const standing = (g, pot) => {
     if (g.target == null) return `<span>${money0(g.have)} in so far</span>`;
     if (g.reached) return `<span class="good">🎯 ${money0(g.target)} · reached</span>`;
     return `<span>🎯 ${money0(g.target)} · ${money0(g.have)} in · ${money0(g.left)} to go</span>`
-      + (g.short > 0.5 ? `<span class="warn">⚠ the months planned are ${money0(g.short)} short</span>` : '<span class="good">the months planned get there</span>');
+      + (g.planOK ? '' : `<span class="warn">⚠️ short ${money0(g.short)}</span>`);
   };
   const folded = prefSet('mpFold');
   const potCard = ({ pot, year }) => {
@@ -1064,13 +1133,15 @@ export function renderMonthPlan(view, ctx, arg) {
     const tags = [pot.owner === 'j' ? ownerTag('j') : who === 'all' ? ownerTag(pot.owner) : '',
       year !== y && pot.type === 'year' ? `<span class="tag c-lav">for ${esc(yearTag(pot, year))}</span>` : '',
       pot.separate ? '<span class="tag c-honey">kept apart</span>' : ''].join('');
+    // Each of you: ✅ once your months planned reach your part, "in" (green) once your ticked months do.
     const personRow = s => {
       const g1 = M.goalCheck(pot, year, [s]);
-      const bit = g1.target == null ? '' : g1.reached ? '<span class="good">reached</span>' : `<span>${money0(g1.left)} to go</span>`;
-      return `<div class="mrowlabel">${ownerTag(s, nameOf(s) + (g1.reached ? ' ✅' : ''))}${bit}</div>${chipRow(pot, year, s)}`;
+      const bit = g1.target == null ? '' : g1.reached ? '<span class="good">✓ in</span>'
+        : `<span>${money0(g1.left)} to go</span>${g1.planOK ? '' : `<span class="warn">⚠️ short ${money0(g1.short)}</span>`}`;
+      return `<div class="mrowlabel${g1.reached ? ' in' : ''}">${ownerTag(s, nameOf(s) + (g1.planOK ? ' ✅' : ''))}${bit}</div>${chipRow(pot, year, s)}`;
     };
     return `<section class="card flat mplan${g.reached ? ' reached' : ''}${fold ? ' folded' : ''}"><div class="mp-head">${jarOf(pot, year, 30)}
-        <div class="grow"><button class="nmbtn" data-pot="${pot.id}" data-year="${year}">${esc(pot.name)}${g.reached ? ' ✅' : ''}</button>
+        <div class="grow"><button class="nmbtn" data-pot="${pot.id}" data-year="${year}">${esc(pot.name)}${g.planOK ? ' ✅' : ''}</button>
           <div class="meta">${tags}${standing(g, pot)}${g.reached ? '' : shortTag(pot, year)}</div></div>
         ${fold ? '' : `<button class="btn sm ghost" data-spreadpot="${key}">Spread</button>`}
         <button class="iconbtn fold" data-fold="${key}" aria-expanded="${!fold}" aria-label="${fold ? `Show ${esc(pot.name)}’s months` : `Fold ${esc(pot.name)} away`}">${fold ? '▸' : '▾'}</button></div>
@@ -1080,11 +1151,12 @@ export function renderMonthPlan(view, ctx, arg) {
   const allYs = [...new Set([...M.dataYears(), M.nowYear(), M.nowYear() + 1])].sort();
   const prev = allYs.filter(v => v < y).pop(), next = allYs.find(v => v > y);
   const bad = checks.filter(r => !r.ok).length, allIn = checks.filter(r => r.allIn).length;
-  const reachedN = list.filter(({ pot, year }) => M.goalCheck(pot, year, M.slotsOf(pot).filter(s => slots.includes(s))).reached).length;
+  const gc = ({ pot, year }) => M.goalCheck(pot, year, M.slotsOf(pot).filter(s => slots.includes(s)));
+  const planN = list.filter(x => gc(x).planOK).length, reachedN = list.filter(x => gc(x).reached).length;
   const solo = who === 'a' || who === 'b', anyOpen = list.some(({ pot, year }) => !folded.has(`${pot.id}|${year}`));
   view.innerHTML = `${whoSeg(who, 'who', 'Whose plan')}
     <div class="stepper"><button class="iconbtn" data-yy="${prev ?? ''}" ${prev == null ? 'disabled' : ''} aria-label="Year before">‹</button>
-      <span class="label">${y}<span class="tiny">${list.length} pot${list.length === 1 ? '' : 's'}${reachedN ? ` · ${reachedN} ✅` : ''}</span></span>
+      <span class="label">${y}<span class="tiny">${list.length} pot${list.length === 1 ? '' : 's'}${planN ? ` · ${planN} ✅` : ''}${reachedN ? ` · ${reachedN} reached` : ''}</span></span>
       <button class="iconbtn" data-yy="${next ?? ''}" ${next == null ? 'disabled' : ''} aria-label="Year after">›</button></div>
     <section class="card ${solo ? 'pcol' : 'c-honey'}"${solo ? ` style="--pc:${esc(ownerColor(who))}"` : ''}><span class="tape" aria-hidden="true"></span>
       <div class="card-head"><h3>${shared ? `Shared pots in ${y}` : solo ? `${esc(ownerPossessive(who))} months in ${y}` : `All our months in ${y}`}</h3>
@@ -1092,7 +1164,7 @@ export function renderMonthPlan(view, ctx, arg) {
       <p class="hint">${shared ? 'Each month: what the two of you put into the shared pots. Tap a month to open it.'
         : `Each month: what goes into savings${solo ? '' : ' (both of you together)'}, and whether the pots below add up to it. Tap a month to ${solo ? 'change its savings amount' : 'open it'}.`}</p>
       <div class="mtiles">${tiles}</div></section>
-    <div class="toprow"><p class="hint grow">Tap any month of a pot to change it (or the rest of the year with it). Ticked months are in; a pot turns green ✅ when they reach its goal.</p>
+    <div class="toprow"><p class="hint grow">Tap any month of a pot to change it (or the rest of the year with it). <b>✅</b> by a pot: the months planned reach its goal. <b>Green</b>: the months ticked done have reached it.</p>
       ${list.length ? `<button class="linkbtn" data-foldall="${anyOpen ? '1' : '0'}">${anyOpen ? '▸ Fold them all' : '▾ Open them all'}</button>` : ''}</div>
     ${list.length ? list.map(potCard).join('') : `<div class="empty">No ${shared ? 'shared ' : ''}pots in ${y} yet.</div>`}`;
 

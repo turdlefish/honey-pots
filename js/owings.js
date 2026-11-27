@@ -131,6 +131,8 @@ function covSelect(id, value, { rest = false } = {}) {
 function editEntry(e, ctx) {
   const isNew = !e;
   const cur = e ? JSON.parse(JSON.stringify(e)) : { id: uid(), date: oMonth === M.nowYM() ? isoDay() : oMonth + '-01', desc: '', amt: null, cat: '', by: 'j', cov: 'both', lines: [], at: Date.now() };
+  // A purchase that isn't split into items is saved without a list of them.
+  if (!Array.isArray(cur.lines)) cur.lines = [];
   const oldYM = e ? String(e.date).slice(0, 7) : null;
   let covTouched = !isNew;
   const el = openSheet(`<div class="sheet-top"><h3>${isNew ? 'A purchase' : 'Purchase'}</h3></div>
@@ -176,7 +178,6 @@ function editEntry(e, ctx) {
     if (g.amt) bits.push(sp.owes.length ? sp.owes.map(o => `${esc(party(o.from))} pays back ${money(o.amt, { cents: true })}`).join(' · ') + ` to ${esc(party(g.by || 'j'))}.` : 'Nobody owes anything for it.');
     $('#en-covhint').innerHTML = bits.join(' ');
   }
-  drawItems();
 
   el.addEventListener('input', hint);
   el.addEventListener('change', e => {
@@ -227,4 +228,6 @@ function editEntry(e, ctx) {
       ctx.render(true);
     }
   };
+  // Drawn after the buttons are set up, so Cancel always works.
+  drawItems();
 }

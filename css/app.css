@@ -609,3 +609,24 @@ button.card.featured { text-align: left; font: inherit; color: inherit; cursor: 
 .xrow { grid-template-columns: 12px minmax(0, 1.2fr) minmax(0, 1fr) 76px 40px; }
 @media (max-width: 420px) { .xrow { grid-template-columns: 12px minmax(0, 1.15fr) minmax(0, .85fr) 64px 34px; gap: 6px; } }
 @media (max-width: 420px) { .xrow { grid-template-columns: 12px minmax(0, 1.55fr) minmax(0, .65fr) 62px 32px; } }
+/* 1.4: ✅ = the months planned reach a goal, green = the months ticked done have */
+button.sumline { border: 0; text-align: left; font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer; width: 100%; }
+.stat.is-in { background: var(--mint-bg); }
+.stat.is-in .v { color: var(--mint-ink); }
+.arow.reached { background: color-mix(in srgb, var(--mint-bg) 70%, transparent); border-radius: 12px; padding-left: 6px; padding-right: 6px; }
+.plan .h.good { color: var(--mint-ink); }
+.mrowlabel .warn, .mrowlabel .good { white-space: nowrap; }
+/* moving what's left in a year into the next one */
+.moverows { display: flex; flex-direction: column; margin: 4px 0 6px; }
+.moverow { display: flex; gap: 10px; align-items: center; padding: 9px 2px; border-top: 1.5px dashed var(--line); cursor: pointer; }
+.moverow:first-child { border-top: 0; }
+.moverow input { width: 18px; height: 18px; flex: none; accent-color: var(--mint); }
+.moverow .grow { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.moverow .mvname { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.moverow .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Budget: each person's bills by account, then all of them */
+.psum .r.acct span { color: var(--ink-soft); }
+.psum .r.subtot { border-top: 1.5px solid var(--c-mid); margin-top: 2px; padding-top: 5px; }
+/* a card whose heading folds it away (Us → Owings) */
+button.foldhead { border: 0; background: none; padding: 0; width: 100%; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+button.foldhead .iconbtn.fold { box-shadow: none; background: var(--surface-2); }

@@ -81,7 +81,8 @@ function badges() {
 document.addEventListener('click', e => {
   const t = e.target.closest('[data-go]');
   if (t && !t.closest('#ob')) { ctx.go(t.dataset.go); return; }
-  if (e.target.id === 'sheet') closeSheet();
+  // Tapping outside a sheet, or its Cancel / Close (even if the sheet's own buttons have a problem).
+  if (e.target.id === 'sheet' || (e.target.closest('[data-close]') && e.target.closest('#sheet'))) closeSheet();
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheetOpen()) closeSheet(); });
 window.addEventListener('hashchange', () => {
