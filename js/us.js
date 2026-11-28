@@ -13,8 +13,8 @@ const isNative = () => !!window.PotsNative;
 const siteName = () => WEBSITE.replace(/^https?:\/\//, '').replace(/\/$/, '');
 /** The website: open it (from the app; on the website you're on it already) or copy its link. */
 const siteRow = () => `<div class="site-row"><p class="small">💻 ${isNative()
-    ? `<b>On the website too:</b> <b class="site-addr">${esc(siteName())}</b>. Put in your space code there and it’s the same space, synced with the app both ways.`
-    : `<b>The website:</b> <b class="site-addr">${esc(siteName())}</b>. The same space as the Android app, synced both ways.`}</p>
+    ? `<b>On the website too:</b> <b class="site-addr">${esc(siteName())}</b> (put in your space code there)`
+    : `<b>The website:</b> <b class="site-addr">${esc(siteName())}</b>`}</p>
   <div class="row-btns">${isNative() ? `<a class="btn sm" href="${esc(WEBSITE)}" target="_blank" rel="noopener">🌐 Open the website ↗</a>` : ''}<button class="btn sm ghost" data-act="copysite">📋 Copy the link</button></div></div>`;
 
 const themeNow = () => { try { return localStorage.getItem('pots:theme') || 'auto'; } catch (e) { return 'auto'; } };
@@ -31,7 +31,7 @@ export function renderUs(view, ctx) {
   // The Owings settings fold away (open or not is remembered on this phone).
   const owOpen = !!pref('usOwingsOpen', false);
   view.innerHTML = `<div class="cols">
-    <section class="card pcol" style="--pc:${esc(me.color)}"><span class="tape" aria-hidden="true"></span>
+    <section class="card pcol hero" style="--pc:${esc(me.color)}"><span class="tape" aria-hidden="true"></span>
       <div class="card-head"><h3>You two</h3></div>
       <div class="kv">
         <div><span class="k">You</span><button class="linkbtn" data-act="name" style="color:var(--ink);font-size:15px">${esc(me.name)} ✎</button></div>
@@ -47,11 +47,10 @@ export function renderUs(view, ctx) {
       <div class="card-head"><h3>This phone</h3></div>
       <div class="kv">
         <div><span class="k">Version</span><span class="small">${APP} ${VERSION} · ${window.PotsNative ? 'Android app' : 'website'}</span></div>
-        <div><span class="k">Sync</span><span class="small">${canSync() ? `${esc(sync)} · ${st.requests} requests · ${(st.down / 1024).toFixed(1)} KB down` : '<b>Only on this device for now</b>'}</span></div>
+        <div><span class="k">Sync</span><span class="small" title="${canSync() ? `${st.requests} requests · ${(st.down / 1024).toFixed(1)} KB down` : ''}">${canSync() ? esc(sync) : '<b>Only on this device for now</b>'}</span></div>
       </div>
       ${!canSync() ? `<p class="note-box small">Honey Pots doesn’t send anything to the database yet: that waits until the database keeps your rows private (see SUPABASE-SETUP.md). Until then everything stays on this device.</p>` : ''}
-      <div class="field"><span>Look</span><div class="seg wide" role="group">${[['light', 'Meadow'], ['dark', 'Night hive'], ['auto', 'Auto']].map(([k, t]) => `<button data-theme-pick="${k}" aria-pressed="${themeNow() === k}">${t}</button>`).join('')}</div>
-        <span class="hint">Auto follows your phone’s light or dark setting.</span></div>
+      <div class="field"><span>Look</span><div class="seg wide" role="group">${[['light', 'Meadow'], ['dark', 'Night hive'], ['auto', 'Auto']].map(([k, t]) => `<button data-theme-pick="${k}" aria-pressed="${themeNow() === k}">${t}</button>`).join('')}</div></div>
       ${siteRow()}
     </section>
     <section class="card flat c-lav fb-card" id="fbCard"></section>

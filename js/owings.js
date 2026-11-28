@@ -3,7 +3,7 @@
 
 import * as store from './store.js';
 import * as M from './model.js';
-import { nameOf, ownerColor, ownerTag, bothSlots, pref, setPref } from './people.js';
+import { nameOf, ownerColor, bothSlots, pref, setPref } from './people.js';
 import { esc, money, r2, uid, toast, openSheet, closeSheet, confirmSheet, parseMoney, isoDay, ymLabel, monthName, weekday } from './ui.js';
 
 let oMonth = null;
@@ -11,30 +11,12 @@ let oMonth = null;
 export const jointName = () => M.vals('settings').jointName || 'Joint account';
 const party = p => (p === 'j' ? jointName() : nameOf(p));
 
-function covLabel(cov) {
-  if (!cov || cov === 'both') return 'Half each';
-  if (cov === 'a' || cov === 'b') return `${nameOf(cov)}’s`;
-  if (cov === 'j') return 'Joint money';
-  if (cov === 'tbd') return 'Decide later';
-  const pot = M.getPot(cov.slice(4));
-  return pot ? `${pot.emoji || '🍯'} ${pot.name}` : 'A pot';
-}
-function covClass(cov) {
-  if (cov === 'a' || cov === 'b') return 'pcol';
-  if (cov === 'tbd') return 'c-lav';
-  if (cov === 'j') return 'c-mint';
-  if (cov && cov.startsWith('pot:')) return 'c-honey';
-  return 'plain';
-}
-const covStyle = cov => (cov === 'a' || cov === 'b' ? ` style="--pc:${esc(ownerColor(cov))}"` : '');
-
 export function renderOwings(view, ctx, arg) {
   if (arg && /^\d{4}-\d{2}$/.test(arg)) oMonth = arg;
   if (!oMonth) oMonth = M.nowYM();
   ctx.topbar.set('Owings');
   const show = pref('owingsShow', 'all');
   const list = M.entries(oMonth), owes = M.monthOwes(oMonth), allow = M.allowances(oMonth);
-  const total = r2(list.reduce((t, e) => t + (+e.amt || 0), 0));
   const filtered = list.filter(e => {
     if (show === 'all') return true;
     const sp = M.splitEntry(e);
@@ -42,42 +24,43 @@ export function renderOwings(view, ctx, arg) {
     return sp.owes.some(o => !M.paidMark(oMonth, e.id, o.from));
   });
 
+  // What's still to pay back, one line each: who → where, how much, and one button to mark it all paid.
   const oweLines = owes.pairs.map(pr => {
     const done = pr.amt < 0.005;
     return `<div class="oweline ${pr.from === 'j' ? 'c-mint' : 'pcol'}${done ? ' settled' : ''}"${pr.from !== 'j' ? ` style="--pc:${esc(ownerColor(pr.from))}"` : ''}>
-      <div><div class="who">${esc(party(pr.from))} → ${esc(party(pr.to))}</div>
-        <div class="sub">${done ? `All paid back · ${money(pr.paid)}` : `${pr.open.length} purchase${pr.open.length === 1 ? '' : 's'}${pr.fromPots ? ` · ${money(pr.fromPots)} of it from pots` : ''}${pr.paid ? ` · ${money(pr.paid)} paid already` : ''}`}</div></div>
-      <div class="amt">${done ? '✓' : money(pr.amt, { cents: true })}</div>
-      ${done ? '' : `<button class="btn sm" data-payall="${pr.from}>${pr.to}">✓ Paid</button>`}</div>`;
+      <div class="grow"><div class="who">${esc(party(pr.from))} → ${esc(party(pr.to))}</div>
+        <div class="sub">${done ? 'All paid back' : `${pr.open.length} purchase${pr.open.length === 1 ? '' : 's'}`}</div></div>
+      <div class="amt">${money(done ? pr.paid : pr.amt, { cents: true })}</div>
+      ${done ? '<span class="paidmark" aria-label="Paid">✓</span>' : `<button class="btn sm" data-payall="${pr.from}>${pr.to}">✓ Paid</button>`}</div>`;
   }).join('');
   const allowHtml = allow.map(a => {
     const pct = a.monthly ? Math.min(100, Math.round(a.spent / a.monthly * 100)) : 0;
     return `<div class="allow ${a.left < 0 ? 'c-peach' : 'c-honey'}"><div class="top"><span class="grow">${esc(a.cat.emoji)} ${esc(a.item.name)}</span>
-      <span class="num">${money(a.spent)} of ${money(a.monthly)}</span><span class="${a.left < 0 ? 'bad' : 'good'}">${a.left < 0 ? `${money(-a.left)} over` : `${money(a.left)} left`}</span></div>
-      <div class="bar"><i style="width:${pct}%"></i></div></div>`;
+      <span class="${a.left < 0 ? 'bad' : 'good'}">${a.left < 0 ? `${money(-a.left)} over` : `${money(a.left)} left`}</span></div>
+      <div class="bar"><i style="width:${pct}%"></i></div><div class="tiny muted num">${money(a.spent)} of ${money(a.monthly)}</div></div>`;
   }).join('');
 
   view.innerHTML = `<div class="stepper"><button class="iconbtn" data-m="-1" aria-label="Month before">‹</button>
-      <button class="label" data-m="0">${esc(ymLabel(oMonth))}<span class="tiny">${list.length} purchase${list.length === 1 ? '' : 's'} · ${money(total)}</span></button>
+      <button class="label" data-m="0">${esc(ymLabel(oMonth))}</button>
       <button class="iconbtn" data-m="1" aria-label="Month after">›</button></div>
-    <div class="cols">
+    <div class="cols side">
       <div class="stack">
-      <section class="card c-honey"><span class="tape" aria-hidden="true"></span>
-        <div class="card-head"><h3>To pay back · ${esc(monthName(oMonth))}</h3></div>
-        ${oweLines ? `<div class="owe">${oweLines}</div>` : '<p class="small muted">Nothing to pay back this month.</p>'}
-        ${owes.tbd.length ? `<button class="sumline short" data-show="tbd" style="border:0;text-align:left">🤔 ${owes.tbd.length} still to decide: who covers ${owes.tbd.length === 1 ? 'it' : 'them'}? ›</button>` : ''}
-        ${allowHtml ? `<hr class="divider"><div class="eyebrow">Spending budgets</div>${allowHtml}` : ''}
+      <section class="card c-honey hero"><span class="tape" aria-hidden="true"></span>
+        <div class="card-head"><h3>To pay back</h3></div>
+        ${oweLines ? `<div class="owe">${oweLines}</div>` : '<p class="small muted">Nothing to pay back.</p>'}
+        ${owes.tbd.length ? `<button class="sumline short" data-show="tbd">🤔 ${owes.tbd.length} to decide ›</button>` : ''}
+        ${allowHtml ? `<hr class="divider">${allowHtml}` : ''}
       </section>
       </div>
-      <section class="card"><div class="toprow"><div class="seg" role="group" aria-label="Show">
+      <section class="card otable-card"><div class="toprow"><div class="seg" role="group" aria-label="Show">
           ${[['all', 'All'], ['open', 'Not paid back'], ['tbd', 'To decide']].map(([k, l]) => `<button data-show="${k}" aria-pressed="${show === k}">${l}</button>`).join('')}</div></div>
-        ${filtered.length ? `<div>${filtered.map(entryRow).join('')}</div>` : `<p class="empty small">${list.length ? 'Nothing here.' : `No purchases in ${esc(monthName(oMonth))} yet.`}</p>`}
+        ${filtered.length ? entryTable(filtered, list) : `<p class="empty small">${list.length ? 'Nothing here.' : `No purchases in ${esc(monthName(oMonth))} yet.`}</p>`}
       </section>
     </div>
     <button class="fab" data-add>＋ Add a purchase</button>`;
 
   view.onclick = async e => {
-    const b = e.target.closest('button');
+    const b = e.target.closest('button') || e.target.closest('tr[data-entry]');
     if (!b) return;
     if (b.dataset.m) { oMonth = b.dataset.m === '0' ? M.nowYM() : M.addMonths(oMonth, +b.dataset.m); return ctx.render(); }
     if (b.dataset.show) { setPref('owingsShow', b.dataset.show); return ctx.render(true); }
@@ -99,23 +82,59 @@ export function renderOwings(view, ctx, arg) {
   };
 }
 
-function entryRow(e) {
-  const sp = M.splitEntry(e), cat = M.catOf(e.cat);
-  const many = sp.lines.length > 1;
-  const chips = sp.lines.map(l => `<span class="tag ${covClass(l.cov)}"${covStyle(l.cov)}>${l.desc && !l.rest ? esc(l.desc) + ' · ' : l.rest && many ? 'Rest · ' : ''}${esc(covLabel(l.cov))}${many || (l.cov && l.cov !== 'both' && l.cov !== 'j' && l.cov !== 'tbd') ? ' ' + money(l.amt) : ''}</span>`).join('');
-  const paids = sp.owes.map(o => {
-    const paid = !!M.paidMark(oMonth, e.id, o.from);
-    return `<button class="paidbtn" data-paid="${e.id}|${o.from}" aria-pressed="${paid}"><span class="dot">✓</span>${esc(party(o.from))} ${paid ? 'paid' : `owes ${money(o.amt, { cents: true })}`}</button>`;
+/** Who covers a part, in a few words for the table ("half each" is the usual, so it isn't shown). */
+function covShort(cov) {
+  if (!cov || cov === 'both') return 'half each';
+  if (cov === 'a' || cov === 'b') return `${nameOf(cov)}’s`;
+  if (cov === 'j') return 'joint money';
+  if (cov === 'tbd') return '🤔 to decide';
+  const pot = M.getPot(cov.slice(4));
+  return pot ? `${pot.emoji || '🍯'} ${pot.name}` : 'a pot';
+}
+
+/**
+ * The month's purchases as a table, like a bank statement: a line for each day, then each purchase
+ * with what each of you owes for it (tap to tick it paid back) and its total in the last column.
+ * list: the purchases on show; all: the whole month (so the columns stay the same with a filter on).
+ */
+function entryTable(list, all) {
+  const split = all.map(e => [e, M.splitEntry(e)]);
+  const from = new Set(split.flatMap(([, sp]) => sp.owes.map(o => o.from)));
+  const cols = [...bothSlots(), ...(from.has('j') ? ['j'] : [])];
+  const spOf = new Map(split.map(([e, sp]) => [e.id, sp]));
+  const sum = { t: 0 };
+  cols.forEach(c => { sum[c] = 0; });
+  let lastDay = null;
+  const rows = list.map(e => {
+    const sp = spOf.get(e.id) || M.splitEntry(e), cat = M.catOf(e.cat), d = String(e.date || '');
+    sum.t += +e.amt || 0;
+    const day = d.length >= 10 && d !== lastDay ? (lastDay = d, `<tr class="dayrow"><th colspan="${cols.length + 2}" scope="rowgroup">${esc(weekday(d))} ${esc(d.slice(8, 10).replace(/^0/, ''))}</th></tr>`) : '';
+    // Under the name, only what's different from the usual (half each, from the joint account).
+    const bits = [];
+    if (sp.lines.length > 1) bits.push(sp.lines.map(l => `${l.rest ? 'rest' : esc(l.desc || 'item')} ${esc(covShort(l.cov))}`).join(' · '));
+    else if (sp.lines[0] && sp.lines[0].cov && sp.lines[0].cov !== 'both') bits.push(esc(covShort(sp.lines[0].cov)));
+    if (e.by && e.by !== 'j') bits.push(`💳 ${esc(nameOf(e.by))}’s card`);
+    if (sp.over) bits.push(`<span class="bad">items ${money(sp.over)} too much</span>`);
+    if (e.note) bits.push('📝');
+    const cells = cols.map(c => {
+      const o = sp.owes.find(x => x.from === c);
+      if (o) {
+        sum[c] += o.amt;
+        const paid = !!M.paidMark(oMonth, e.id, c);
+        return `<td class="o"><button class="owebtn" data-paid="${e.id}|${c}" aria-pressed="${paid}" aria-label="${esc(party(c))} ${paid ? 'paid back' : 'owes'} ${money(o.amt, { cents: true })}">${money(o.amt, { cents: true })}</button></td>`;
+      }
+      if (e.by === c) return `<td class="o"><span class="faint" title="Paid with ${esc(party(c))}’s card">💳</span></td>`;
+      if (sp.resp.tbd > 0) return `<td class="o"><span class="tbd" title="To decide">?</span></td>`;
+      return '<td class="o"><span class="faint">–</span></td>';
+    }).join('');
+    return `${day}<tr data-entry="${e.id}"><td class="p"><button class="ebtn" data-entry="${e.id}"><span class="pn">${e.cat ? `${esc(cat.emoji)} ` : ''}${esc(e.desc || 'Purchase')}</span>${bits.length ? `<span class="ps">${bits.join(' · ')}</span>` : ''}</button></td>
+      ${cells}<td class="t">${money(e.amt, { cents: true })}</td></tr>`;
   }).join('');
-  const d = String(e.date || '');
-  return `<div class="erow">
-    <div class="day">${esc(d.slice(8, 10).replace(/^0/, '') || '?')}<small>${d.length >= 10 ? esc(weekday(d)) : ''}</small></div>
-    <div class="grow"><button class="ebtn" data-entry="${e.id}">
-      <div class="toprow" style="flex-wrap:nowrap;align-items:flex-start"><div class="what">${esc(e.desc || 'Purchase')}</div><div class="amt">${money(e.amt, { cents: true })}</div></div>
-      ${e.cat || (e.by && e.by !== 'j') ? `<div class="tiny muted" style="font-weight:700">${e.cat ? `${esc(cat.emoji)} ${esc(cat.name)}` : ''}${e.by && e.by !== 'j' ? `${e.cat ? ' · ' : ''}paid with ${esc(nameOf(e.by))}’s card` : ''}</div>` : ''}
-      <div class="splits">${chips}${sp.over ? `<span class="tag c-peach">items add up to ${money(sp.over)} more</span>` : ''}</div>
-      ${e.note ? `<div class="note">${esc(e.note)}</div>` : ''}</button>
-      ${paids ? `<div class="splits">${paids}</div>` : ''}</div></div>`;
+  return `<div class="otable-wrap"><table class="otable">
+    <thead><tr><th class="p" scope="col">Purchase</th>${cols.map(c => `<th class="o" scope="col">${esc(party(c))}<small>owes</small></th>`).join('')}<th class="t" scope="col">Total</th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr><th class="p" scope="row">${list.length === all.length ? 'All' : 'These'} ${list.length}</th>${cols.map(c => `<td class="o">${money(r2(sum[c]), { cents: true })}</td>`).join('')}<td class="t">${money(r2(sum.t), { cents: true })}</td></tr></tfoot>
+  </table></div>`;
 }
 
 // ── Adding or changing a purchase ────────────────────────────────────────

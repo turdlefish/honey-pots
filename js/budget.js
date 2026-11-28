@@ -60,13 +60,16 @@ export function renderBudget(view, ctx) {
     return `<div class="psum pcol${big ? ' big' : ''}" style="--pc:${esc(p.color)}"><div class="nm">${esc(p.name)}</div>
       <div class="r"><span>Coming in</span><b>${income == null ? `<button class="linkbtn" data-income="${s}">set pay ›</button>` : `<button class="linkbtn" style="color:inherit;padding:0" data-income="${s}">${v(income)} ✎</button>`}</b></div>
       ${billRows}
-      <div class="r"><span>Savings <small class="muted">(this month, Pots)</small></span><b>−${v(save)}</b></div>
-      ${t.apart ? `<div class="r"><span>${esc(t.apartNames.join(', ') || 'Kept apart')} <small class="muted">(this month’s plan)</small></span><b>−${v(apart)}</b></div>` : ''}
+      <div class="r"><span>Savings</span><b>−${v(save)}</b></div>
+      ${t.apart ? `<div class="r"><span>${esc(t.apartNames.join(', ') || 'Kept apart')}</span><b>−${v(apart)}</b></div>` : ''}
       <div class="r left"><span>Left over</span><b class="${left != null && left < 0 ? 'bad' : ''}">${left == null ? '—' : v(left)}</b></div></div>`;
   };
   // With a filter on: what the bills it shows add up to, and each person's share.
   const opt = (val, label, cur) => `<option value="${esc(val)}" ${val === cur ? 'selected' : ''}>${esc(label)}</option>`;
-  const filters = fromList.length || toList.length || fromPref || toPref ? `<div class="filters">
+  // The Paid from / Paid to filters stay folded away behind one button until you want them (or one is on).
+  const canFilter = fromList.length || toList.length || fromPref || toPref;
+  const filtersOpen = !!(fromPref || toPref || pref('budgetFiltersOpen', false));
+  const filters = canFilter && filtersOpen ? `<div class="filters">
       <label class="field"><span>Paid from</span><select class="inp" data-ffrom>${opt('', 'Any account', fromPref)}${fromList.map(a => opt(a, a, fromPref)).join('')}${opt('_none', 'Not set', fromPref)}</select></label>
       <label class="field"><span>Paid to</span><select class="inp" data-fto>${opt('', 'Anywhere', toPref)}${toList.map(a => opt(a, a, toPref)).join('')}${opt('_none', 'Not set', toPref)}</select></label></div>` : '';
   const fsum = fromPref || toPref ? (() => {
@@ -96,23 +99,22 @@ export function renderBudget(view, ctx) {
   };
 
   const whoSeg = whoSwitch(who, 'who', 'Whose budget');
-  const head = who === 'all' ? `<div class="sumgrid">${bothSlots().map(s => psum(s)).join('')}</div>
-        <p class="hint">Bills count your share of the ones you split, by the account they’re paid from (set “Paid from” on a bill). Savings is what each of you puts into pots this month (Pots tab); a pot kept apart, like the house deposit, has its own line: this month’s amount from its plan.</p>`
-    : who === 'j' ? `${sharedSum()}<p class="hint">Only the bills you share, with what each of you pays.</p>`
-      : `${psum(who, true)}<p class="hint">${esc(nameOf(who))}’s own bills, plus ${esc(nameOf(who))}’s share of the shared ones.</p>`;
+  const head = who === 'all' ? `<div class="sumgrid">${bothSlots().map(s => psum(s)).join('')}</div>`
+    : who === 'j' ? sharedSum() : psum(who, true);
 
   view.innerHTML = `${bookSeg}${whoSeg}
     <div class="toprow"><div class="seg" role="group" aria-label="Show amounts per">${PERIODS.map(([k, l]) => `<button data-per="${k}" aria-pressed="${per === k}">${l}</button>`).join('')}</div>
-      <button class="btn sm ghost" data-newgroup>＋ New group</button></div>
+      ${canFilter && !(fromPref || toPref) ? `<button class="btn sm ghost" data-filters aria-expanded="${filtersOpen}" aria-label="Filter by account">🔎<span class="lbl-sm"> ${filtersOpen ? 'Hide filters' : 'Filter'}</span></button>` : ''}</div>
     ${filters}${fsum}
     <div class="cols">
-      <section class="card ${who === 'a' || who === 'b' ? 'pcol' : 'c-honey'} span"${who === 'a' || who === 'b' ? ` style="--pc:${esc(person(who).color)}"` : ''}><span class="tape" aria-hidden="true"></span>
+      <section class="card ${who === 'a' || who === 'b' ? 'pcol' : 'c-honey'} span hero"${who === 'a' || who === 'b' ? ` style="--pc:${esc(person(who).color)}"` : ''}><span class="tape" aria-hidden="true"></span>
         <div class="card-head"><h3>${who === 'a' || who === 'b' ? `${esc(nameOf(who))}’s ${esc(perWord)}` : who === 'j' ? `Shared, each ${esc(perWord)}` : `Each ${esc(perWord)}`}</h3></div>
         ${head}
       </section>
       ${groups.map(groupCard).join('')}
       ${loose.length ? groupCard({ id: '_other', name: 'Other', emoji: '🧾' }) : ''}
       ${!items.length ? `<div class="empty span">${all.length ? 'Nothing here yet.' : 'No bills yet. Start a group (like <b>Subscriptions</b>) with <b>＋ New group</b>.'}</div>` : ''}
+      <button class="addline span" data-newgroup>＋ New group</button>
     </div>`;
 
   view.onchange = e => {
@@ -124,7 +126,8 @@ export function renderBudget(view, ctx) {
     if (!b) return;
     if (b.dataset.book != null) { setPref('budgetBook', b.dataset.book); return ctx.render(); }
     if (b.hasAttribute('data-newbook')) return editXBudget(null, ctx);
-    if (b.hasAttribute('data-clearf')) { setPref('budgetFrom', ''); setPref('budgetTo', ''); return ctx.render(true); }
+    if (b.hasAttribute('data-clearf')) { setPref('budgetFrom', ''); setPref('budgetTo', ''); setPref('budgetFiltersOpen', false); return ctx.render(true); }
+    if (b.hasAttribute('data-filters')) { setPref('budgetFiltersOpen', !filtersOpen); return ctx.render(true); }
     if (b.dataset.who) { setPref('budgetWho', b.dataset.who); return ctx.render(); }
     if (b.dataset.per) { setPref('budgetPer', b.dataset.per); return ctx.render(true); }
     if (b.dataset.income) return editIncome(b.dataset.income, ctx);
@@ -142,8 +145,6 @@ function itemRow(i, per, who = 'all') {
   const meta = [
     i.who === 'j' ? ownerTag('j', even ? 'half each' : 'shared') : who === 'all' ? ownerTag(i.who) : '',
     i.freq !== per ? `<span>${money(i.amt)} a ${esc(M.FREQ_LABEL[i.freq])}</span>` : '',
-    i.acct || i.to ? `<span>· ${i.acct ? esc(i.acct) : 'from ?'}${i.to ? ` → ${esc(i.to)}` : ''}</span>` : '',
-    i.track ? `<span class="tag c-honey">tracked in Owings</span>` : '',
   ].filter(Boolean).join('');
   const amount = mine ? M.fromYear(sh[who], per) : M.fromYear(y, per);
   const under = mine ? `<small>${even ? 'half' : 'share'} of ${money(M.fromYear(y, per))}</small>`

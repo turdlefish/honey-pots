@@ -51,7 +51,7 @@ export function renderYears(view, ctx) {
         const pct = t.target ? Math.min(100, (t.have / t.target) * 100) : 0, usedPct = t.target ? Math.min(pct, (t.used / t.target) * 100) : 0;
         return `<button class="yrow${t.reached ? ' reached' : ''}" data-pot="${p.id}">${jar({ ...lv, size: 34, emoji: p.emoji, lid: ownerColor(p.owner), reached: t.reached })}
           <div><div class="nm">${esc(p.name)}${t.planOK ? ' ✅' : ''}${p.archived ? ' <span class="tag c-peach">put away</span>' : ''}</div>
-            <div class="meta">${t.target ? `${p.type === 'goal' ? 'Goal' : 'Target'} ${money0(t.target)} · ` : ''}${t.carry ? `${money0(t.carry)} from before · ` : ''}saved ${money0(t.saved)} · used ${money0(t.used)}${t.moved > 0.5 ? ` · ➡️ ${money0(t.moved)} moved to ${y + 1}` : ''}</div>
+            <div class="meta num">${t.target ? `${money0(t.have)} of ${money0(t.target)}` : `${money0(t.have)} in`}${t.used ? ` · used ${money0(t.used)}` : ''}</div>
             ${t.target ? `<div class="bar"><i style="width:${pct - usedPct}%"></i><i style="width:${usedPct}%"></i></div>` : ''}</div>
           <div class="res">${res}</div></button>`;
       }).join('')}</div></section>`;
@@ -59,8 +59,7 @@ export function renderYears(view, ctx) {
 
   const planNext = y >= now ? (() => {
     const ny = y + 1, planned = M.yearPots(ny).length, toCopy = M.yearPots(y).filter(p => !M.potYear(p.id, ny)).length;
-    return `<section class="card c-lav"><span class="tape" aria-hidden="true"></span><div class="card-head"><h3>Plan ${ny}</h3><span class="sub">${planned} pot${planned === 1 ? '' : 's'} in ${ny} so far</span></div>
-      <p class="small">${toCopy ? `Bring ${y}’s pots into ${ny}: tick the ones you want and press Copy (you can undo it straight after). Then change any target.` : `Every ${y} pot is in ${ny}. Change a name or a target there, or add a new pot.`}</p>
+    return `<section class="card c-lav"><div class="card-head"><h3>Plan ${ny}</h3><span class="sub">${planned} pot${planned === 1 ? '' : 's'} so far</span></div>
       <div class="row-btns"><button class="btn" data-plan="${ny}">${toCopy ? `📋 Copy ${y}’s pots into ${ny} ›` : `${ny}’s pots ›`}</button></div></section>`;
   })() : '';
 
@@ -69,16 +68,16 @@ export function renderYears(view, ctx) {
   const title = who === 'all' ? `${y} at a glance` : who === 'j' ? `${y}: the shared pots` : `${y}: ${esc(ownerPossessive(who))} pots`;
   view.innerHTML = `${whoSeg(who, 'ywho', 'Whose pots')}
     <div class="stepper"><button class="iconbtn" data-y="${prev ?? ''}" ${prev == null ? 'disabled' : ''} aria-label="Year before">‹</button>
-      <span class="label">${y}<span class="tiny">${y === now ? 'this year' : y < now ? 'looking back' : 'coming up'}</span></span>
+      <span class="label">${y}</span>
       <button class="iconbtn" data-y="${next ?? ''}" ${next == null ? 'disabled' : ''} aria-label="Year after">›</button></div>
     <div class="cols">
-      <section class="card ${solo ? 'pcol' : 'c-honey'} span"${solo ? ` style="--pc:${esc(ownerColor(who))}"` : ''}><span class="tape" aria-hidden="true"></span>
+      <section class="card ${solo ? 'pcol' : 'c-honey'} span hero"${solo ? ` style="--pc:${esc(ownerColor(who))}"` : ''}><span class="tape" aria-hidden="true"></span>
         <div class="card-head"><h3>${title}</h3></div>
         <div class="stats">
           <div class="stat"><div class="k">Put in</div><div class="v">${money0(slots.reduce((t, s) => t + inYear[s], 0))}</div><div class="x">${slots.length > 1 ? slots.map(s => `${esc(nameOf(s))} ${money0(inYear[s])}`).join(' · ') : who === 'all' ? '' : `into ${esc(nameOf(who))}’s own pots`}</div></div>
-          <div class="stat"><div class="k">Used</div><div class="v">${money0(used)}</div><div class="x">taken out of pots</div></div>
-          <div class="stat"><div class="k">Targets reached</div><div class="v">${reached} of ${withTarget.length}</div><div class="x">${y < now ? 'by the end of the year' : 'so far'}</div></div>
-          ${interest ? `<div class="stat"><div class="k">Interest</div><div class="v">${money(interest)}</div><div class="x">from ${who === 'all' ? 'your' : who === 'j' ? 'the shared' : `${esc(nameOf(who))}’s`} savers</div></div>` : ''}
+          <div class="stat"><div class="k">Used</div><div class="v">${money0(used)}</div></div>
+          <div class="stat"><div class="k">Targets reached</div><div class="v">${reached} of ${withTarget.length}</div></div>
+          ${interest ? `<div class="stat"><div class="k">Interest</div><div class="v">${money(interest)}</div></div>` : ''}
         </div>
         ${bars}
         <div class="row-btns"><button class="btn sm" data-plan="${y}">✎ Change ${y}’s pots</button></div>
@@ -133,7 +132,7 @@ export function renderPlanner(view, ctx, arg) {
       <span class="grow"><span class="mvname"><b>${esc(p.emoji || '🍯')} ${esc(p.name)}</b>${ownerTag(p.owner)}</span>
         <span class="tiny muted">${py}: ${targetText(p, last.py?.target)}${last.tot.balance > 0.5 ? ` · ${money0(last.tot.balance)} left in it` : ''}</span></span></label>`;
   }).join('');
-  const copyCard = toCopy.length ? `<section class="card c-lav span"><span class="tape" aria-hidden="true"></span>
+  const copyCard = toCopy.length ? `<section class="card c-lav span hero"><span class="tape" aria-hidden="true"></span>
       <div class="card-head"><h3>📋 Copy ${py}’s pots into ${y}</h3><span class="sub">${toCopy.length} not in ${y} yet</span></div>
       <ol class="steps small"><li>Tick the pots to bring into ${y}. Each starts with its ${py} target.</li><li>Press <b>Copy</b> at the bottom. Undo shows straight after, in case.</li><li>Change any target below, in <b>In ${y}</b>.</li></ol>
       <div class="row-btns"><button class="linkbtn" data-all="1">Tick all</button><button class="linkbtn" data-all="0">Untick all</button></div>
@@ -150,9 +149,9 @@ export function renderPlanner(view, ctx, arg) {
         <span class="tiny muted">${targetText(p, st.py?.target)} · ${months ? `${money0(t.plan)} planned` : 'no months planned yet'}${t.carry ? ` · ${money0(t.carry)} from ${py}` : ''}</span></span>
       <span class="pen" aria-hidden="true">✎</span></button>`;
   }).join('');
-  const inCard = `<section class="card c-honey span"><span class="tape" aria-hidden="true"></span>
+  const inCard = `<section class="card c-honey span${toCopy.length ? '' : ' hero'}"><span class="tape" aria-hidden="true"></span>
       <div class="card-head"><h3>In ${y}</h3><span class="sub">${inYear.length} pot${inYear.length === 1 ? '' : 's'}</span></div>
-      ${inRows ? `<div class="plrows">${inRows}</div><p class="hint">Tap a pot to change its name or target, or take it out of ${y}.</p>` : `<p class="small muted">No pots in ${y} yet.${toCopy.length ? ` Copy ${py}’s above, or add one.` : ''}</p>`}
+      ${inRows ? `<div class="plrows">${inRows}</div>` : `<p class="small muted">No pots in ${y} yet.${toCopy.length ? ` Copy ${py}’s above, or add one.` : ''}</p>`}
       <div class="row-btns"><button class="btn sm" data-addpot>＋ Add a pot to ${y}</button></div></section>`;
 
   // 3. Each month against the savings amount (folded away until you want it).
@@ -281,7 +280,6 @@ function monthCheckCard(s, y) {
   };
   return `<section class="card flat pcol" style="--pc:${esc(ownerColor(s))}"><div class="card-head"><h3>${esc(ownerPossessive(s))} months in ${y}</h3>
       <span class="sub">${bad ? `${bad} to look at` : 'all add up'}</span></div>
-    <p class="hint">Each month’s pot amounts should add up to what goes into savings that month. Tap a month to fix it, or <button class="linkbtn" style="padding:0" data-plangrid="${s}">📅 plan every pot by month</button>.</p>
     <div class="mcheck"><div class="mrow h"><span>Month</span><span>Savings</span><span>In pots</span><span></span></div>
       ${rows.map(r => `<button class="mrow${r.ok ? '' : ' off'}" data-month="${r.ym}"><span><b>${esc(monShort(r.ym))}</b></span>
         <span class="num">${r.total == null ? '—' : money(r.total)}</span>

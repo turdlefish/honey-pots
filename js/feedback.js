@@ -61,7 +61,7 @@ export function feedbackHTML() {
   const done = all.filter(n => n.done).sort((a, b) => (b.doneT || 0) - (a.doneT || 0));
   return `<span class="tape" aria-hidden="true"></span>
     <div class="card-head"><h3>💭 App feedback</h3>${open.length ? `<span class="sub">${open.length} open</span>` : ''}</div>
-    <p class="small muted">Bugs, ideas and wishes for ${APP}. Either of you can add them, and tick them off once they’re sorted. The person who makes ${APP} sees them too, and ticks them off when they’re sorted.</p>
+    <p class="small muted">Bugs, ideas and wishes. The maker of ${APP} sees them too.</p>
     <form class="fb-add"><textarea class="inp" name="fb" rows="2" maxlength="${MAX}" placeholder="e.g. I’d love a reminder to tick the months off" aria-label="New feedback">${esc(drafts.add)}</textarea><button class="btn sm primary">Add</button></form>
     ${open.length ? `<ul class="fb-list">${open.map(itemHTML).join('')}</ul>` : '<p class="small muted">Nothing open, lovely ✨</p>'}
     ${open.length ? '<div class="row-btns"><button type="button" class="btn sm ghost" data-fb-act="copy">📋 Copy open feedback</button></div>' : ''}

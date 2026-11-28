@@ -147,26 +147,23 @@ export function renderPie(view, ctx, bookSeg) {
         ? `<div class="r"><span>Own costs</span><b>${m(v.ownPart)}</b></div><div class="r"><span>${solo ? 'Share of shared costs' : 'Shared costs'}</span><b>${m(v.sharedPart)}</b></div>`
         : `<div class="r"><span>${v.sharedPart > 0.004 && solo ? 'Share of shared costs' : 'Everything it goes on'}</span><b>${m(v.costs)}${v.pay ? ` <small class="muted">${pct(v.costs)}</small>` : ''}</b></div>`}
        ${v.pay != null ? `<div class="r left"><span>${v.left >= 0 ? 'Left over' : 'Over the pay'}</span><b class="${v.left < 0 ? 'bad' : ''}">${m(Math.abs(v.left))} <small class="muted">${pct(Math.abs(v.left))}</small></b></div>` : ''}`;
-  const hint = who === 'j' ? 'Costs you share, in full, with what each of you pays.'
-    : who === 'all' ? 'Both of your budgets together: every cost in full, a shared one once.'
-      : `${esc(nameOf(who))}’s own costs, plus ${esc(nameOf(who))}’s share of the shared ones.`;
   const cardCls = solo ? 'pcol' : who === 'j' ? 'c-mint' : 'c-honey', cardStyle = solo ? ` style="--pc:${esc(ownerColor(who))}"` : '';
   const makeBtn = s => `<button class="btn sm" data-xmake="${s}">＋ Make ${esc(nameOf(s))}’s budget</button>`;
   let head;
   if (!bs.length) {
-    head = `<section class="card c-honey span"><span class="tape" aria-hidden="true"></span><div class="card-head"><h3>🍩 Pie chart budget</h3></div>
+    head = `<section class="card c-honey span hero"><span class="tape" aria-hidden="true"></span><div class="card-head"><h3>🍩 Pie chart budget</h3></div>
       <p class="small">Each of you can have one: your pay, what it goes on in groups, and a doughnut of where it goes. A cost you share (like health insurance) counts in both, half each or however you split it.</p>
       <div class="row-btns">${bothSlots().map(makeBtn).join('')}</div></section>`;
   } else if (solo && !v.own.length && !v.rows.length) {
-    head = `<section class="card ${cardCls} span"${cardStyle}><span class="tape" aria-hidden="true"></span><div class="card-head"><h3>🍩 ${esc(nameOf(who))}’s budget</h3></div>
+    head = `<section class="card ${cardCls} span hero"${cardStyle}><span class="tape" aria-hidden="true"></span><div class="card-head"><h3>🍩 ${esc(nameOf(who))}’s budget</h3></div>
       <p class="small">${esc(nameOf(who))} doesn’t have a pie chart budget yet: pay, what it goes on in groups, and a doughnut of where it goes. Costs you share show in it too, at ${esc(nameOf(who))}’s share.</p>
       <div class="row-btns">${makeBtn(who)}</div></section>`;
   } else {
-    head = `<section class="card ${cardCls} span xcard"${cardStyle}><span class="tape" aria-hidden="true"></span>
+    head = `<section class="card ${cardCls} span xcard hero"${cardStyle}><span class="tape" aria-hidden="true"></span>
       <div class="card-head"><h3>🍩 ${esc(title)}</h3>${solo && v.own.length ? `<button class="iconbtn" data-xedit="${esc(v.own[0].id)}" aria-label="Change this budget">✎</button>` : ''}</div>
       <div class="xtop">${doughnut(parts, v, inP, perWord)}
         <div class="xsum">${sumRows}
-          <p class="hint">Amounts per ${esc(perWord)}. ${hint} Tap a group to see what’s in it.${solo && v.own[0]?.note ? ` · ${esc(v.own[0].note)}` : ''}</p>
+          ${solo && v.own[0]?.note ? `<p class="hint">${esc(v.own[0].note)}</p>` : ''}
           ${solo && !v.own.length ? `<div class="row-btns">${makeBtn(who)}</div>` : ''}
         </div></div>
       ${ranked.length ? `<div class="xlist" role="list" aria-label="What it goes on, biggest first">${ranked.map(meter).join('')}${leftRow ? meter(leftRow) : ''}</div>` : ''}
