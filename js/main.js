@@ -67,7 +67,16 @@ function render(keepScroll) {
   }
   badges();
   view.scrollTop = keepScroll ? st : 0;
+  setScrollbarRoom();
 }
+
+// How much room the page's scroll bar takes (none on a phone), so the top bar can line up with the page.
+function setScrollbarRoom() {
+  const w = Math.max(0, view.offsetWidth - view.clientWidth);
+  document.documentElement.style.setProperty('--sbw', w + 'px');
+}
+// The scroll bar comes and goes as the page gets longer or shorter, or the window changes size.
+if (window.ResizeObserver) new ResizeObserver(setScrollbarRoom).observe(view);
 
 // The little count on Owings: purchases this month you still have to pay back.
 function badges() {

@@ -82,19 +82,21 @@ export function renderOwings(view, ctx, arg) {
   };
 }
 
-/** Who covers a part, in a few words for the table ("half each" is the usual, so it isn't shown). */
-function covShort(cov) {
+/** Who covers a purchase, in a few words for the table ("half each" is the usual, so it isn't shown). */
+function covWords(cov) {
   if (!cov || cov === 'both') return 'half each';
   if (cov === 'a' || cov === 'b') return `${nameOf(cov)}’s`;
   if (cov === 'j') return 'joint money';
-  if (cov === 'tbd') return '🤔 to decide';
+  if (cov === 'tbd') return 'to decide';
   const pot = M.getPot(cov.slice(4));
-  return pot ? `${pot.emoji || '🍯'} ${pot.name}` : 'a pot';
+  return pot ? `${pot.name} pot` : 'a pot';
 }
 
 /**
- * The month's purchases as a table, like a bank statement: a line for each day, then each purchase
- * with what each of you owes for it (tap to tick it paid back) and its total in the last column.
+ * The month's purchases as a table: each day's date with a line under it, then that day's purchases.
+ * Each of you has a column in your own colour with what you owe for each purchase (tap it to tick it
+ * paid back), and the purchase's total is in the last column. Under a name: its tag, and only what's
+ * different from the usual (half each, from the joint account). No emoji on the purchases themselves.
  * list: the purchases on show; all: the whole month (so the columns stay the same with a filter on).
  */
 function entryTable(list, all) {
@@ -104,36 +106,37 @@ function entryTable(list, all) {
   const spOf = new Map(split.map(([e, sp]) => [e.id, sp]));
   const sum = { t: 0 };
   cols.forEach(c => { sum[c] = 0; });
+  // Each person's column wears their colour (the joint account's is mint), all the way down.
+  const cc = c => ` style="--cc:${esc(c === 'j' ? 'var(--mint)' : ownerColor(c))}"`;
+  const blanks = cols.map(c => `<td class="o"${cc(c)}></td>`).join('') + '<td class="t"></td>';
   let lastDay = null;
   const rows = list.map(e => {
-    const sp = spOf.get(e.id) || M.splitEntry(e), cat = M.catOf(e.cat), d = String(e.date || '');
+    const sp = spOf.get(e.id) || M.splitEntry(e), d = String(e.date || '');
     sum.t += +e.amt || 0;
-    const day = d.length >= 10 && d !== lastDay ? (lastDay = d, `<tr class="dayrow"><th colspan="${cols.length + 2}" scope="rowgroup">${esc(weekday(d))} ${esc(d.slice(8, 10).replace(/^0/, ''))}</th></tr>`) : '';
-    // Under the name, only what's different from the usual (half each, from the joint account).
+    const dayRow = d !== lastDay
+      ? (lastDay = d, `<tr class="dayrow"><th class="p" scope="rowgroup">${d.length >= 10 ? `${esc(weekday(d))} ${esc(d.slice(8, 10).replace(/^0/, ''))}` : 'No date'}</th>${blanks}</tr>`) : '';
     const bits = [];
-    if (sp.lines.length > 1) bits.push(sp.lines.map(l => `${l.rest ? 'rest' : esc(l.desc || 'item')} ${esc(covShort(l.cov))}`).join(' · '));
-    else if (sp.lines[0] && sp.lines[0].cov && sp.lines[0].cov !== 'both') bits.push(esc(covShort(sp.lines[0].cov)));
-    if (e.by && e.by !== 'j') bits.push(`💳 ${esc(nameOf(e.by))}’s card`);
+    if (e.cat) bits.push(esc(M.catOf(e.cat).name));
+    if (sp.lines.length > 1) bits.push(`split in ${sp.lines.length}`);
+    else if (sp.lines[0] && sp.lines[0].cov && sp.lines[0].cov !== 'both') bits.push(esc(covWords(sp.lines[0].cov)));
+    if (e.by && e.by !== 'j') bits.push(`${esc(nameOf(e.by))}’s card`);
     if (sp.over) bits.push(`<span class="bad">items ${money(sp.over)} too much</span>`);
-    if (e.note) bits.push('📝');
     const cells = cols.map(c => {
       const o = sp.owes.find(x => x.from === c);
       if (o) {
         sum[c] += o.amt;
         const paid = !!M.paidMark(oMonth, e.id, c);
-        return `<td class="o"><button class="owebtn" data-paid="${e.id}|${c}" aria-pressed="${paid}" aria-label="${esc(party(c))} ${paid ? 'paid back' : 'owes'} ${money(o.amt, { cents: true })}">${money(o.amt, { cents: true })}</button></td>`;
+        return `<td class="o"${cc(c)}><button class="owebtn" data-paid="${e.id}|${c}" aria-pressed="${paid}" aria-label="${esc(party(c))} ${paid ? 'has paid back' : 'owes'} ${money(o.amt, { cents: true })}${paid ? '' : ': tap when paid back'}">${money(o.amt, { cents: true })}</button></td>`;
       }
-      if (e.by === c) return `<td class="o"><span class="faint" title="Paid with ${esc(party(c))}’s card">💳</span></td>`;
-      if (sp.resp.tbd > 0) return `<td class="o"><span class="tbd" title="To decide">?</span></td>`;
-      return '<td class="o"><span class="faint">–</span></td>';
+      if (sp.resp.tbd > 0) return `<td class="o"${cc(c)}><span class="tbd" title="To decide">?</span></td>`;
+      return `<td class="o"${cc(c)}><span class="none" aria-label="Nothing">–</span></td>`;
     }).join('');
-    return `${day}<tr data-entry="${e.id}"><td class="p"><button class="ebtn" data-entry="${e.id}"><span class="pn">${e.cat ? `${esc(cat.emoji)} ` : ''}${esc(e.desc || 'Purchase')}</span>${bits.length ? `<span class="ps">${bits.join(' · ')}</span>` : ''}</button></td>
-      ${cells}<td class="t">${money(e.amt, { cents: true })}</td></tr>`;
+    return `${dayRow}<tr data-entry="${e.id}"><td class="p"><button class="ebtn" data-entry="${e.id}"><span class="pn">${esc(e.desc || 'Purchase')}</span>${bits.length ? `<span class="ps">${bits.join(' · ')}</span>` : ''}</button></td>${cells}<td class="t">${money(e.amt, { cents: true })}</td></tr>`;
   }).join('');
   return `<div class="otable-wrap"><table class="otable">
-    <thead><tr><th class="p" scope="col">Purchase</th>${cols.map(c => `<th class="o" scope="col">${esc(party(c))}<small>owes</small></th>`).join('')}<th class="t" scope="col">Total</th></tr></thead>
+    <thead><tr><th class="p" scope="col">Purchase</th>${cols.map(c => `<th class="o" scope="col"${cc(c)}><span class="who">${esc(party(c))}</span><small>owes</small></th>`).join('')}<th class="t" scope="col">Total</th></tr></thead>
     <tbody>${rows}</tbody>
-    <tfoot><tr><th class="p" scope="row">${list.length === all.length ? 'All' : 'These'} ${list.length}</th>${cols.map(c => `<td class="o">${money(r2(sum[c]), { cents: true })}</td>`).join('')}<td class="t">${money(r2(sum.t), { cents: true })}</td></tr></tfoot>
+    <tfoot><tr><th class="p" scope="row">${list.length === all.length ? 'Month total' : 'These'}</th>${cols.map(c => `<td class="o"${cc(c)}>${money(r2(sum[c]), { cents: true })}</td>`).join('')}<td class="t">${money(r2(sum.t), { cents: true })}</td></tr></tfoot>
   </table></div>`;
 }
 
@@ -158,7 +161,9 @@ function editEntry(e, ctx) {
     <label class="field"><span>What was it</span><input class="inp" id="en-desc" value="${esc(cur.desc)}" placeholder="e.g. Bunnings, Linkt, dinner" autocomplete="off"></label>
     <div class="fields2"><label class="field"><span>Amount</span><input class="inp money" id="en-amt" inputmode="decimal" placeholder="$0.00" value="${cur.amt != null ? esc(String(cur.amt)) : ''}"></label>
       <label class="field"><span>Day</span><input class="inp" type="date" id="en-date" value="${esc(cur.date)}"></label></div>
-    <div class="field"><span>Kind</span><div class="chips" id="en-cat">${M.cats().map(c => `<button type="button" class="chip" data-cat="${esc(c.id)}" aria-pressed="${c.id === cur.cat}">${esc(c.emoji)} ${esc(c.name)}</button>`).join('')}</div></div>
+    <div class="field"><span>Tag</span>
+      <button type="button" class="tagpick" id="en-tagbtn" aria-expanded="false" aria-controls="en-cat"><span id="en-tagname"></span><span class="chev" aria-hidden="true">▸</span></button>
+      <div class="chips" id="en-cat" hidden>${M.cats().map(c => `<button type="button" class="chip" data-cat="${esc(c.id)}" aria-pressed="${c.id === cur.cat}">${esc(c.emoji)} ${esc(c.name)}</button>`).join('')}</div></div>
     <div class="field"><span>Paid with</span><div class="seg wide" id="en-by">${[['j', jointName()], ...bothSlots().map(s => [s, `${nameOf(s)}’s card`])].map(([k, l]) => `<button type="button" data-by="${k}" aria-pressed="${k === (cur.by || 'j')}">${esc(l)}</button>`).join('')}</div></div>
     <div class="field" id="en-items"></div>
     <div class="field"><span id="en-covlabel">Who covers it</span><div id="en-covbox"></div><span class="hint" id="en-covhint"></span></div>
@@ -203,10 +208,23 @@ function editEntry(e, ctx) {
     if (e.target.id === 'en-cov' || e.target.matches('[data-cov]')) covTouched = true;
     hint();
   });
+  // The tag: one line saying which (or "None"), that opens the list of tags; picking one folds it away again.
+  const showTags = open => {
+    $('#en-cat').hidden = !open;
+    $('#en-tagbtn').setAttribute('aria-expanded', String(open));
+    $('#en-tagbtn .chev').textContent = open ? '▾' : '▸';
+  };
+  const drawTag = () => {
+    const id = el.querySelector('#en-cat [aria-pressed="true"]')?.dataset.cat, c = id ? M.cats().find(x => x.id === id) : null;
+    $('#en-tagname').innerHTML = c ? `${esc(c.emoji)} ${esc(c.name)}` : '<span class="muted">None</span>';
+  };
+  drawTag();
   el.onclick = async ev => {
+    if (ev.target.closest('#en-tagbtn')) return showTags($('#en-cat').hidden);
     const c = ev.target.closest('[data-cat]');
     if (c) {
       el.querySelectorAll('#en-cat [data-cat]').forEach(x => x.setAttribute('aria-pressed', String(x === c && x.getAttribute('aria-pressed') !== 'true')));
+      drawTag(); showTags(false);
       // A spending budget you share (e.g. groceries) is the joint money's to cover.
       const tracked = M.budgetItems().find(i => i.track === c.dataset.cat);
       if (tracked && !covTouched && $('#en-cov')) { $('#en-cov').value = tracked.who === 'j' ? 'j' : tracked.who; }

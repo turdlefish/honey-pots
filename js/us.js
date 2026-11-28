@@ -56,10 +56,10 @@ export function renderUs(view, ctx) {
     <section class="card flat c-lav fb-card" id="fbCard"></section>
     <section class="card flat${owOpen ? '' : ' folded'}" id="us-ow">
       <button class="card-head foldhead" data-act="owfold" aria-expanded="${owOpen}"><h3>Owings</h3>
-        ${owOpen ? '' : `<span class="sub">${esc(jointName())} · ${cats.length} kinds of purchase</span>`}<span class="iconbtn fold" aria-hidden="true">${owOpen ? '▾' : '▸'}</span></button>
+        ${owOpen ? '' : `<span class="sub">${esc(jointName())} · ${cats.length} tags</span>`}<span class="iconbtn fold" aria-hidden="true">${owOpen ? '▾' : '▸'}</span></button>
       ${owOpen ? `<label class="field"><span>Your joint account is called</span><input class="inp" id="us-joint" value="${esc(jointName())}" placeholder="Joint account" autocomplete="off"></label>
-      <div class="field"><span>Kinds of purchase</span><div class="lines" id="us-cats">${cats.map(c => `<div class="catrow" data-cat="${esc(c.id)}"><input class="inp emo" data-cemo value="${esc(c.emoji)}" aria-label="Picture"><input class="inp" data-cname value="${esc(c.name)}" aria-label="Name"><button class="linkbtn" data-cdel="${esc(c.id)}" aria-label="Remove">✕</button></div>`).join('')}</div>
-        <div class="row-btns"><button class="btn sm ghost" data-act="addcat">＋ Add a kind</button><button class="btn sm" data-act="savecats">Save kinds</button></div></div>` : ''}
+      <div class="field"><span>Tags for purchases</span><div class="lines" id="us-cats">${cats.map(c => `<div class="catrow" data-cat="${esc(c.id)}"><input class="inp emo" data-cemo value="${esc(c.emoji)}" aria-label="Picture"><input class="inp" data-cname value="${esc(c.name)}" aria-label="Name"><button class="linkbtn" data-cdel="${esc(c.id)}" aria-label="Remove">✕</button></div>`).join('')}</div>
+        <div class="row-btns"><button class="btn sm ghost" data-act="addcat">＋ Add a tag</button><button class="btn sm" data-act="savecats">Save tags</button></div></div>` : ''}
     </section>
     </div>
     ${CONFIG.isLocalHost ? `<section class="card flat c-peach" id="us-dev"><div class="card-head"><h3>${CONFIG.mock ? 'Test server' : 'On this computer'}</h3></div>
@@ -103,7 +103,7 @@ export function renderUs(view, ctx) {
     }
     if (a === 'savecats') {
       const list = [...view.querySelectorAll('#us-cats .catrow')].map(r => ({ id: r.dataset.cat, emoji: r.querySelector('[data-cemo]').value.trim() || '•', name: r.querySelector('[data-cname]').value.trim() })).filter(c => c.name);
-      M.setCats(list); toast('Kinds saved'); ctx.render(true);
+      M.setCats(list); toast('Tags saved'); ctx.render(true);
     }
     if (a === 'import') return importSheet(ctx);
     if (a === 'signout') {
