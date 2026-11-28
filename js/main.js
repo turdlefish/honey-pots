@@ -78,6 +78,32 @@ function setScrollbarRoom() {
 // The scroll bar comes and goes as the page gets longer or shorter, or the window changes size.
 if (window.ResizeObserver) new ResizeObserver(setScrollbarRoom).observe(view);
 
+// On a computer, two fingers spreading on the touchpad zoom the whole tab in (a pinch, not the browser's zoom, so
+// there's no zoom sign by the address): the page then runs past the window's edges, with the top bar out of sight.
+// A page can't undo that itself, so while it lasts a note says how. Not on a phone or tablet, where pinching is normal.
+function watchPinchZoom() {
+  const vv = window.visualViewport;
+  if (!vv || !window.matchMedia('(pointer: fine)').matches) return;
+  const keys = /Mac/i.test(navigator.platform || '') ? '⌘ 0' : 'Ctrl + 0';
+  const note = document.createElement('div');
+  note.className = 'zoomnote'; note.hidden = true; note.setAttribute('role', 'status');
+  note.innerHTML = `<span>🔍 Zoomed in · <b>${keys}</b> fits the window</span><button type="button" aria-label="Hide this note">✕</button>`;
+  document.body.appendChild(note);
+  let shut = false;
+  note.querySelector('button').onclick = () => { shut = true; place(); };
+  function place() {
+    const zoomed = vv.scale > 1.01;
+    if (!zoomed) shut = false;                     // zoom in again later and it comes back
+    note.hidden = !zoomed || shut;
+    if (note.hidden) return;
+    // Fixed things stay on the unzoomed page, so move it to the bottom middle of the part you can see, at its usual size.
+    note.style.transform = `translate(${vv.offsetLeft + vv.width / 2}px, ${vv.offsetTop + vv.height - 18 / vv.scale}px) scale(${1 / vv.scale}) translate(-50%, -100%)`;
+  }
+  vv.addEventListener('resize', place);
+  vv.addEventListener('scroll', place);
+  place();
+}
+
 // The little count on Owings: purchases this month you still have to pay back.
 function badges() {
   const b = document.getElementById('b-owings');
@@ -129,5 +155,6 @@ function start() {
 }
 
 bigEmoji();
+watchPinchZoom();
 if (store.getSession()) start();
 else runOnboarding(start);
